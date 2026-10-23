@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "npm audit --audit-level=critical || true; vite build",
     "start": "node server.cjs"
   },
   "dependencies": {
@@ -16,7 +16,7 @@
     "topojson-client": "^3.1.0",
     "i18n-iso-countries": "^7.14.0",
     "maplibre-gl": "^5.8.0",
-    "unzipper": "^0.12.3",
-    "csv-parser": "^3.2.0"
+    "unzipper": "^0.12.5",
+    "csv-parser": "^3.2.1"
   }
 }
