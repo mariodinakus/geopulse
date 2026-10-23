@@ -5,8 +5,8 @@ import './atlas.css';
 const empty={type:'FeatureCollection',features:[]};
 const fc=(items,point)=>({type:'FeatureCollection',features:items.map((item,i)=>({type:'Feature',id:i,geometry:{type:'Point',coordinates:[item.lng,item.lat]},properties:{idx:i,name:item.name||item.title||'',type:item.type||item.kind||'Reference'}}))});
 export default function Map2D({features,points=[],bases=[],chokepoints=[],selectedIso='',onCountrySelect,onPointSelect,onBaseSelect,onChokeSelect,showBorders=true,showBases=false,showChokes=false,arcs=[]}){
-const el=useRef(null),map=useRef(null),callbacks=useRef({}),data=useMemo(()=>({countries:features?.type==='FeatureCollection'?features:empty,points:fc(points),bases:fc(bases),chokes:fc(chokepoints),arcs:{type:'FeatureCollection',features:arcs.filter(x=>Array.isArray(x.start)&&Array.isArray(x.end)).map((a,i)=>({type:'Feature',id:i,geometry:{type:'LineString',coordinates:[[a.start[1],a.start[0]],[a.end[1],a.end[0]]]},properties:{label:a.label||'Connection'}}))}}),[features,points,bases,chokepoints,arcs]);
-callbacks.current={onCountrySelect,onPointSelect,onBaseSelect,onChokeSelect,selectedIso};
+const el=useRef(null),map=useRef(null),callbacks=useRef({}),latestData=useRef(null),data=useMemo(()=>({countries:features?.type==='FeatureCollection'?features:empty,points:fc(points),bases:fc(bases),chokes:fc(chokepoints),arcs:{type:'FeatureCollection',features:arcs.filter(x=>Array.isArray(x.start)&&Array.isArray(x.end)).map((a,i)=>({type:'Feature',id:i,geometry:{type:'LineString',coordinates:[[a.start[1],a.start[0]],[a.end[1],a.end[0]]]},properties:{label:a.label||'Connection'}}))}}),[features,points,bases,chokepoints,arcs]);
+latestData.current=data;callbacks.current={onCountrySelect,onPointSelect,onBaseSelect,onChokeSelect,selectedIso};
 useEffect(()=>{
 if(!el.current)return;
 let ready=false,alive=true;
@@ -15,7 +15,7 @@ const m=new maplibregl.Map({container:el.current,center:[18,19],zoom:1.4,minZoom
 map.current=m;m.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');m.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
 m.on('load',()=>{if(!alive)return;ready=true;
 const src=(id,v)=>m.addSource(id,{type:'geojson',data:v});
-src('countries',data.countries);src('points',data.points);src('bases',data.bases);src('chokes',data.chokes);src('arcs',data.arcs);
+src('countries',latestData.current.countries);src('points',latestData.current.points);src('bases',latestData.current.bases);src('chokes',latestData.current.chokes);src('arcs',latestData.current.arcs);
 m.addLayer({id:'country-fill',type:'fill',source:'countries',paint:{'fill-color':'#31aac8','fill-opacity':['case',['==',['get','iso'],callbacks.current.selectedIso],.21,.02]}});
 m.addLayer({id:'country-line',type:'line',source:'countries',paint:{'line-color':'#8daabe','line-width':.45,'line-opacity':.5}});
 m.addLayer({id:'arc-lines',type:'line',source:'arcs',paint:{'line-color':'#f3b968','line-width':1.9,'line-opacity':.8},layout:{'line-cap':'round'}});
