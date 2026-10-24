@@ -48,11 +48,12 @@ function App(){
  const associated=useMemo(()=>countries.find(c=>c.iso===compareIso),[compareIso,countries]);
  const activeEvents=useMemo(()=>mode==='rewind'?allEvents.filter(x=>x.year<=year):allEvents,[mode,year]);
  const pointData=useMemo(()=>[
+  ...(features.length===0?countries:[]),
   ...(layers.battles?activeEvents.filter(p=>p.kind==='battle'):[]),
   ...(layers.attacks?activeEvents.filter(p=>p.kind==='attack'):[]),
   ...(layers.bases?basesLayer:[]),
   ...(layers.chokes?chokesLayer:[])
- ],[layers,activeEvents]);
+ ],[layers,activeEvents,features.length,countries]);
  const relationArcs=useMemo(()=>layers.relations&&selected?.kind==='country'&&Number.isFinite(selected.lat)&&Number.isFinite(selected.lng)?comparisons.filter(c=>Number.isFinite(c.lat)&&Number.isFinite(c.lng)).map(c=>({from:[selected.lat,selected.lng],to:[c.lat,c.lng],label:c.name})):[],[layers.relations,selected,comparisons]);
  const searchData=useMemo(()=>[...countries,...allMapItems].filter(p=>titleOf(p).toLowerCase().includes(search.trim().toLowerCase())).slice(0,18),[search,countries]);
  const newsDomains=useMemo(()=>Object.entries(news.reduce((a,n)=>{let k=n.domain||'Unknown';a[k]=(a[k]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,7),[news]);
@@ -103,8 +104,8 @@ function App(){
        onPolygonHover={p=>setHovered(p?.properties?.name||null)}
        pointsData={pointData}
        pointLat="lat" pointLng="lng" pointResolution={6}
-       pointAltitude={p=>p.id===selected?.id?.07:.024}
-       pointRadius={p=>p.id===selected?.id?.42:p.kind==='choke'?.34:.26}
+       pointAltitude={p=>p.id===selected?.id ? 0.07 : 0.024}
+       pointRadius={p=>p.id===selected?.id ? 0.42 : p.kind==='choke' ? 0.34 : 0.26}
        pointColor={pointPaint}
        pointLabel={p=>titleOf(p)}
        onPointClick={focus}
