@@ -29,7 +29,7 @@ class GlobeBoundary extends React.Component{constructor(p){super(p);this.state={
 function App(){
  const [features,setFeatures]=useState([]),[geoStatus,setGeoStatus]=useState('loading');
  const [selected,setSelected]=useState({...seedCountries[0],kind:'country'}),[hovered,setHovered]=useState(null);
- const [mode,setMode]=useState('world'),[layers,setLayers]=useState({battles:true,attacks:false,chokes:true,bases:false,relations:false});
+ const [mode,setMode]=useState('world'),[rail,setRail]=useState('archive'),[layers,setLayers]=useState({battles:true,attacks:false,chokes:true,bases:false,relations:false});
  const [dossierTab,setDossierTab]=useState('overview'),[sheet,setSheet]=useState(false),[searchOpen,setSearchOpen]=useState(false),[search,setSearch]=useState('');
  const [menuOpen,setMenuOpen]=useState(false),[tour,setTour]=useState(false),[tourIndex,setTourIndex]=useState(0);
  const [w,setW]=useState(typeof window==='undefined'?1200:window.innerWidth),[h,setH]=useState(typeof window==='undefined'?800:window.innerHeight),[globeReady,setGlobeReady]=useState(false);
@@ -126,9 +126,9 @@ function App(){
     {geoStatus!=='ready'&&<div className="gp-map-warning">{geoStatus==='loading'?'Loading real borders…':'Country polygons unavailable; reference points remain accessible'}</div>}
     {hovered&&<div className="gp-hover-tag">{hovered}</div>}
     <div className="gp-timeline">
-      <div className="gp-timeline-head"><div><span className="gp-beacon"/><b>{mode==='rewind'?'WORLD REWIND':'KEY DEVELOPMENTS'}</b><small>{mode==='rewind'?'Historic references':'Historical archive · sourced cases'}</small></div><button onClick={()=>setTour(v=>!v)}>{tour?<Pause size={13}/>:<Play size={13}/>} {tour?'PAUSE TOUR':'START TOUR'}</button></div>
+      <div className="gp-timeline-head"><div><span className="gp-beacon"/><b>{mode==='rewind'?'WORLD REWIND':rail==='news'?'GLOBAL REPORTING':'KEY DEVELOPMENTS'}</b><small>{mode==='rewind'?'Historic references':rail==='news'?'GDELT indexed · '+(newsStatus==='ok'?'updated':'unavailable'):'Historical archive · sourced cases'}</small></div><div className="gp-timeline-actions">{mode!=='rewind'&&<div className="gp-rail-tabs"><button className={rail==='news'?'active':''} onClick={()=>{setRail('news');setTour(false)}}>NEWS</button><button className={rail==='archive'?'active':''} onClick={()=>setRail('archive')}>ARCHIVE</button></div>}{(mode==='rewind'||rail==='archive')&&<button onClick={()=>setTour(v=>!v)}>{tour?<Pause size={13}/>:<Play size={13}/>} {tour?'PAUSE TOUR':'START TOUR'}</button>}</div></div>
       {mode==='rewind'&&<div className="gp-rewind-bar"><span>1863</span><input type="range" min="1863" max="2026" value={year} onChange={e=>setYear(+e.target.value)}/><b>{year}</b></div>}
-      <div className="gp-story-list">{(mode==='rewind'?currentArchive.slice(0,10):featured).map((e,i)=><button key={e.id+'story'} className={selected?.id===e.id?'chosen':''} onClick={()=>focus(e)}><small><span style={{background:groups[e.kind]}}/> {e.period||e.year} · {e.type}</small><strong>{e.title}</strong><span>{e.location}</span></button>)}</div>
+      <div className="gp-story-list">{mode!=='rewind'&&rail==='news'?(visibleHeadlines.length?visibleHeadlines.map((n,i)=><a key={n.url+i} className="gp-news-card" href={n.url} target="_blank" rel="noopener noreferrer"><small><span className="gp-report-dot"/> {n.domain||'GDELT INDEXED'} · {dateOf(n.date)}</small><strong>{n.title}</strong><span>READ ORIGINAL ARTICLE ↗</span></a>):<div className="gp-news-empty">News feed {newsStatus==='loading'?'is loading': 'is unavailable'}. No fabricated headlines.</div>):(mode==='rewind'?currentArchive.slice(0,10):featured).map((e,i)=><button key={e.id+'story'} className={selected?.id===e.id?'chosen':''} onClick={()=>focus(e)}><small><span style={{background:groups[e.kind]}}/> {e.period||e.year} · {e.type}</small><strong>{e.title}</strong><span>{e.location}</span></button>)}</div>
     </div>
    </div>
    <aside className={'gp-side '+(sheet?'gp-sheet-open':'')}>
