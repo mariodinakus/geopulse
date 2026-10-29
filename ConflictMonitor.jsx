@@ -35,7 +35,7 @@ function useFeed(url){
    if(!active)return;
    setLoading(true);
    const controller=new AbortController();
-   const timeout=setTimeout(()=>controller.abort(),21000);
+   const timeout=setTimeout(()=>controller.abort(),30000);
    try{
     const res=await fetch(url,{signal:controller.signal,cache:'no-store'});
     if(!res.ok)throw Error('HTTP '+res.status);
