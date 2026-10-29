@@ -4,6 +4,7 @@ import {Globe2,Search,Layers,Activity,Clock3,Shield,Anchor,Landmark,Globe as Wor
 import {countries as seedCountries,events,arsenal} from './data.js';
 import {bases,chokepoints,alliances,nuclear,memberships,nuclearStatus,commonMemberships} from './strategic.js';
 import './premium.css';
+import ConflictMonitor from './ConflictMonitor.jsx';
 const ThreeGlobe=React.lazy(()=>import('react-globe.gl'));
 const MODULES=[{id:'world',label:'World',icon:Globe2},{id:'conflicts',label:'Conflicts',icon:Shield},{id:'relations',label:'Relations',icon:GitBranch},{id:'trade',label:'Trade',icon:Anchor},{id:'military',label:'Military',icon:Satellite},{id:'rewind',label:'Rewind',icon:Clock3},{id:'intelligence',label:'Intelligence',icon:Activity}];
 const MODES=['CAUSE & EFFECT','RIPPLE EFFECT','BLIND SPOTS','WHAT IF?'];
@@ -17,7 +18,7 @@ const allEvents=events.map(p=>({...p,kind:p.type==='Strike'||p.type==='Attack'?'
 const basesLayer=bases.map(p=>({...p,kind:'base',name:p.name}));
 const chokesLayer=chokepoints.map(p=>({...p,kind:'choke'}));
 const allMapItems=[...allEvents,...basesLayer,...chokesLayer];
-const groups={country:'#7adfdf',battle:'#ff806e',attack:'#eeb76e',base:'#c7a7f5',choke:'#6cdbd0'};
+const groups={country:'#7adfdf',battle:'#ff806e',attack:'#eeb76e',base:'#c7a7f5',choke:'#6cdbd0',front:'#ff6464'};
 const worldUrl='/world-countries.geojson';
 function boundaryCountry(f){return{kind:'country',name:f.properties.name,iso:f.properties.iso3,region:f.properties.continent,source:'https://data.worldbank.org/country/'+String(f.properties.iso3||'').toLowerCase()}}
 function countryFromGeo(f){const target=boundaryCountry(f);const known=seedCountries.find(x=>x.iso===target.iso);if(known)return{...target,lat:known.lat,lng:known.lng};const polys=f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates;const ring=polys.sort((a,b)=>b[0]?.length-a[0]?.length)[0]?.[0]||[];if(!ring.length)return{...target,lat:0,lng:0};let lats=ring.map(x=>x[1]),lngs=ring.map(x=>x[0]);return{...target,lat:(Math.min(...lats)+Math.max(...lats))/2,lng:(Math.min(...lngs)+Math.max(...lngs))/2}}
@@ -28,6 +29,7 @@ function MinimalFallback({message}){return <div className="gp-error"><Globe2 siz
 class GlobeBoundary extends React.Component{constructor(p){super(p);this.state={error:null}}static getDerivedStateFromError(error){return{error}}componentDidCatch(e){console.error('GEOPULSE globe error',e)}render(){return this.state.error?<MinimalFallback message={this.state.error.message}/>:this.props.children}}
 function App(){
  const [features,setFeatures]=useState([]),[geoStatus,setGeoStatus]=useState('loading');
+ const [frontCatalog,setFrontCatalog]=useState([]);
  const [selected,setSelected]=useState({...seedCountries[0],kind:'country'}),[hovered,setHovered]=useState(null);
  const [mode,setMode]=useState('world'),[rail,setRail]=useState('archive'),[layers,setLayers]=useState({battles:true,attacks:false,chokes:true,bases:false,relations:false});
  const [dossierTab,setDossierTab]=useState('overview'),[sheet,setSheet]=useState(false),[searchOpen,setSearchOpen]=useState(false),[search,setSearch]=useState('');
@@ -47,13 +49,13 @@ function App(){
  const comparisons=useMemo(()=>countries.filter(c=>memberships(countryIso).some(a=>a.members.includes(c.iso))&&c.iso!==countryIso).slice(0,30),[countryIso,countries]);
  const associated=useMemo(()=>countries.find(c=>c.iso===compareIso),[compareIso,countries]);
  const activeEvents=useMemo(()=>mode==='rewind'?allEvents.filter(x=>x.year<=year):allEvents,[mode,year]);
- const pointData=useMemo(()=>[
+ const pointData=useMemo(()=>mode==='conflicts'?frontCatalog.map(f=>({...f,kind:'front',name:f.labelEl||f.label,title:f.labelEl||f.label})):[
   ...(features.length===0?countries:[]),
   ...(layers.battles?activeEvents.filter(p=>p.kind==='battle'):[]),
   ...(layers.attacks?activeEvents.filter(p=>p.kind==='attack'):[]),
   ...(layers.bases?basesLayer:[]),
   ...(layers.chokes?chokesLayer:[])
- ],[layers,activeEvents,features.length,countries]);
+ ],[mode,frontCatalog,layers,activeEvents,features.length,countries]);
  const relationArcs=useMemo(()=>layers.relations&&selected?.kind==='country'&&Number.isFinite(selected.lat)&&Number.isFinite(selected.lng)?comparisons.filter(c=>Number.isFinite(c.lat)&&Number.isFinite(c.lng)).map(c=>({from:[selected.lat,selected.lng],to:[c.lat,c.lng],label:c.name})):[],[layers.relations,selected,comparisons]);
  const searchData=useMemo(()=>[...countries,...allMapItems].filter(p=>titleOf(p).toLowerCase().includes(search.trim().toLowerCase())).slice(0,18),[search,countries]);
  const newsDomains=useMemo(()=>Object.entries(news.reduce((a,n)=>{let k=n.domain||'Unknown';a[k]=(a[k]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,7),[news]);
@@ -64,7 +66,7 @@ function App(){
  const focus=useCallback((p,coords)=>{if(!p)return;const item=p.geometry?countryFromGeo(p):p;const pos=coords||item;setSelected({...item,lat:Number.isFinite(pos?.lat)?pos.lat:item.lat,lng:Number.isFinite(pos?.lng)?pos.lng:item.lng});setDossierTab('overview');setSheet(true);setSearchOpen(false);setSearch('');setMenuOpen(false);try{let c=globe.current?.controls?.();if(c)c.autoRotate=false;globe.current?.pointOfView({lat:pos?.lat??item.lat??20,lng:pos?.lng??item.lng??0,altitude:isMobile?2.35:1.8},1050)}catch(e){console.warn(e)}},[isMobile]);
  useEffect(()=>{if(!tour)return;const id=setInterval(()=>setTourIndex(i=>(i+1)%featured.length),8500);return()=>clearInterval(id)},[tour,featured.length]);
  useEffect(()=>{if(tour&&featured[tourIndex])focus(featured[tourIndex])},[tourIndex,tour]);
- function onMode(id){setMode(id);setMenuOpen(false);if(id==='conflicts')setLayers(x=>({...x,battles:true,attacks:true}));if(id==='military')setLayers(x=>({...x,bases:true}));if(id==='trade')setLayers(x=>({...x,chokes:true}));if(id==='relations')setLayers(x=>({...x,relations:true}));if(id==='intelligence')setSheet(true)}
+ function onMode(id){setMode(id);setMenuOpen(false);if(id==='conflicts'){setLayers(x=>({...x,battles:true,attacks:true}));setRail('news');setSheet(true)}if(id==='military')setLayers(x=>({...x,bases:true}));if(id==='trade')setLayers(x=>({...x,chokes:true}));if(id==='relations')setLayers(x=>({...x,relations:true}));if(id==='intelligence')setSheet(true)}
  function chooseCountry(iso){const c=countries.find(x=>x.iso===iso);if(c)focus(c)}
  const pointPaint=p=>groups[p.kind]||'#7acbcc';
  const gs=canvas.current?.clientWidth||(isMobile?w:Math.floor(w*.76));
@@ -83,7 +85,7 @@ function App(){
   <div className="gp-view">
    <div className="gp-canvas" ref={canvas}>
     <div className="gp-stars" aria-hidden="true"/>
-    <div className="gp-heading"><div className="gp-eyebrow"><span className="gp-pulse"/> GEOPOLITICAL INTELLIGENCE SYSTEM <span className="gp-heading-separator">/</span> EXPLORE THE WORLD</div><h1>Understand what moves <em>the world.</em></h1><p>Countries. Power. Conflicts. Connections. One interactive Earth.</p></div>
+    <div className="gp-heading"><div className="gp-eyebrow"><span className="gp-pulse"/> GEOPOLITICAL INTELLIGENCE SYSTEM <span className="gp-heading-separator">/</span> EXPLORE THE WORLD</div><h1>{mode==='conflicts'?<>Global conflicts. <em>Source-backed.</em></>:<>Understand what moves <em>the world.</em></>}</h1><p>{mode==='conflicts'?'Regional watchpoints · incoming reports · strategic effects. Not live battle coordinates.':'Countries. Power. Conflicts. Connections. One interactive Earth.'}</p></div>
     <div className="gp-globe">
     <GlobeBoundary><Suspense fallback={<div className="gp-globe-loading"><span className="gp-orb">◉</span><strong>Preparing the real Earth...</strong><p>Natural Earth geography · 3D interactive globe</p></div>}>
      <ThreeGlobe ref={globe} width={viewWidth} height={viewHeight}
@@ -105,7 +107,7 @@ function App(){
        pointsData={pointData}
        pointLat="lat" pointLng="lng" pointResolution={6}
        pointAltitude={p=>p.id===selected?.id ? 0.07 : 0.024}
-       pointRadius={p=>p.id===selected?.id ? 0.42 : p.kind==='choke' ? 0.34 : 0.26}
+       pointRadius={p=>p.kind==='front'?(p.id===selected?.id ? 0.82 : 0.56):p.id===selected?.id ? 0.42 : p.kind==='choke' ? 0.34 : 0.26}
        pointColor={pointPaint}
        pointLabel={p=>titleOf(p)}
        onPointClick={focus}
@@ -119,7 +121,7 @@ function App(){
     </div>
     <div className="gp-map-nav">
       <div className="gp-map-nav-head"><Layers size={14}/> INTELLIGENCE LAYERS <span>{pointData.length} markers</span></div>
-      <div className="gp-chip-scroll">{LAYERS.map(l=><button key={l.id} className={'gp-layer-chip '+(layers[l.id]?'on':'')} onClick={()=>setLayers(prev=>({...prev,[l.id]:!prev[l.id]}))}><span style={{background:l.color}}/>{l.name}</button>)}</div>
+      {mode==='conflicts'?<div className="gp-chip-scroll"><span className="gp-layer-chip on"><span style={{background:'#ff6464'}}/>MONITORED REGIONS · NOT LIVE STRIKES</span></div>:<div className="gp-chip-scroll">{LAYERS.map(l=><button key={l.id} className={'gp-layer-chip '+(layers[l.id]?'on':'')} onClick={()=>setLayers(prev=>({...prev,[l.id]:!prev[l.id]}))}><span style={{background:l.color}}/>{l.name}</button>)}</div>}
     </div>
     <div className="gp-map-buttons"><button onClick={()=>{try{const c=globe.current?.controls?.();if(c)c.autoRotate=!c.autoRotate}catch{}}} title="Toggle globe rotation"><Compass size={17}/></button><button onClick={()=>globe.current?.pointOfView({lat:27,lng:21,altitude:2.6},850)} title="Reset globe position"><Globe2 size={17}/></button><button onClick={()=>{setSearchOpen(true);setTimeout(()=>searchRef.current?.focus(),0)}} title="Find a country"><Search size={17}/></button></div>
     <div className="gp-map-hint">DRAG TO ROTATE <span>·</span> PINCH TO ZOOM <span>·</span> SELECT ANY COUNTRY</div>
@@ -133,7 +135,7 @@ function App(){
    </div>
    <aside className={'gp-side '+(sheet?'gp-sheet-open':'')}>
     <div className="gp-side-title"><div><span className="gp-side-pip"/> INTELLIGENCE DOSSIER</div><button className="gp-side-close" onClick={()=>setSheet(false)} aria-label="Close dossier"><X size={19}/></button><span className="gp-side-source">OPEN DATA</span></div>
-    {mode==='intelligence'?<>
+    {mode==='conflicts'?<ConflictMonitor selected={selected} onFocus={focus} onFronts={setFrontCatalog}/>:mode==='intelligence'?<>
       <div className="gp-intel-head"><Label>ADVANCED ANALYSIS</Label><h2>Understand the connections.</h2><p>Explore hypotheses, coverage differences and transparent scenarios.</p></div>
       <div className="gp-intel-tabs">{MODES.map(a=><button key={a} className={analysisMode===a?'active':''} onClick={()=>setAnalysisMode(a)}>{a}</button>)}</div>
       <div className="gp-analysis">
