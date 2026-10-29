@@ -11,42 +11,132 @@ const FRONT_DEFS=[
 {id:'sahel',label:'Sahel',labelEl:'Σαχέλ',region:'West Africa',lat:15.2,lng:1.1,category:'conflict',priority:8,impact:'Regional',channels:['Regional security','Displacement','Trade corridors'],why:'Cross-border insecurity and humanitarian consequences across the Sahel.',query:'(Mali OR Burkina Faso OR Niger OR Sahel) (militants OR attack OR insurgency OR army OR conflict)'},
 {id:'taiwan',label:'Taiwan Strait',labelEl:'Στενό της Ταϊβάν',region:'East Asia',lat:24.0,lng:120.0,category:'flashpoint',priority:9,impact:'Global',channels:['Semiconductors','Trade routes','Major-power tensions'],why:'Strategic tension and trade/technology exposure; NOT labelled an ongoing war.',query:'(Taiwan OR Taiwan Strait) (military OR drills OR tensions OR blockade OR naval OR airspace)'}
 ];
-const CATALOGUE=FRONT_DEFS.map(({query,...rest})=>({...rest,coordinatePrecision:'Approximate region centre; not a battle or strike location'}));
+
+const CATALOGUE=FRONT_DEFS.map(({query,...front})=>({
+ ...front,coordinatePrecision:'Approximate region centre; not a verified battle or strike coordinate'
+}));
 const CACHE=new Map();
 const WINDOWS=new Set(['24h','72h','7d']);
-function validUrl(value){try{const p=new URL(value);return ['https:','http:'].includes(p.protocol)?p.href:null}catch{return null}}
-function cleanArticle(x){
- const url=validUrl(x.url);if(!url||!x.title)return null;
- return {title:String(x.title).slice(0,350),url,domain:String(x.domain||new URL(url).hostname).slice(0,90),date:String(x.seendate||'').slice(0,20),language:String(x.language||'').slice(0,40),sourceCountry:String(x.sourcecountry||'').slice(0,60)};
+const FOCUSES={
+ all:'captured OR seized OR recaptured OR liberated OR control OR retreated OR withdrew OR withdrawal OR casualties OR killed OR wounded OR destroyed OR offensive OR airstrike OR fighting OR ceasefire',
+ territory:'captured OR seized OR recaptured OR liberated OR occupied OR advances OR took control OR retreated OR withdrew OR withdrawal OR village OR town OR territory',
+ losses:'casualties OR killed OR wounded OR deaths OR dead OR fatalities OR injured OR losses OR destroyed OR prisoners OR displaced',
+ attacks:'airstrike OR missile OR drone OR shelling OR bombardment OR clashes OR fighting OR offensive OR attack',
+ diplomacy:'ceasefire OR truce OR peace talks OR negotiations OR agreement OR diplomacy OR mediation'
+};
+const FRONT_PATTERNS={
+ ukraine:/\b(ukrain|russia|russian|kyiv|kiev|kharkiv|donetsk|zaporizh|kherson)\w*/i,
+ levant:/\b(israel|gaza|palestin|lebanon|lebanese|hezbollah|hamas|west bank)\w*/i,
+ 'iran-gulf':/\b(iran|iranian|hormuz|persian gulf)\w*/i,
+ sudan:/\b(sudan|darfur|khartoum|rsf)\w*/i,
+ 'red-sea':/\b(yemen|yemeni|houthi|red sea|bab el.mandeb)\w*/i,
+ drc:/\b(congo|congolese|goma|north kivu|m23)\w*/i,
+ myanmar:/\b(myanmar|burma|burmese|junta|rakhine)\w*/i,
+ sahel:/\b(sahel|mali|burkina faso|niger|jihadists)\w*/i,
+ taiwan:/\b(taiwan|taiwanese|taipei|taiwan strait)\w*/i
+};
+const TERRITORY=/\b(recaptur\w*|captur\w*|seiz\w*|liberat\w*|occupi\w*|territor\w*|retreat\w*|withdraw\w*|withdrawal|advanc\w*|lost control|take\w* control|took control|territorial gains|falls? to|fall of|conquer\w*)\b/i;
+const LOSSES=/\b(casualt\w*|fatalit\w*|killed|death\w*|dead|wounded|injur\w*|losses|soldiers lost|troops killed|destroyed|prisoners|pows?|humanitarian toll)\b/i;
+const ATTACKS=/\b(airstrik\w*|attack\w*|missile\w*|drone\w*|shell\w*|bombard\w*|offensive\w*|fighting|clashes|battle\w*|explosions?)\b/i;
+const DIPLOMACY=/\b(ceasefire|truce|negotiat\w*|peace talks|peace deal|diplomac\w*|mediati\w*|talks resume)\b/i;
+function classify(title) {
+ const text=String(title||'');
+ // Territorial outcomes and losses are editorial signals extracted from headlines, NOT confirmed event classifications.
+ if(TERRITORY.test(text))return 'territory';
+ if(LOSSES.test(text))return 'losses';
+ if(ATTACKS.test(text))return 'attacks';
+ if(DIPLOMACY.test(text))return 'diplomacy';
+ return 'other';
 }
-async function pullArticles(front,window){
- const query=new URLSearchParams({query:front.query,mode:'artlist',maxrecords:'50',format:'json',sort:'datedesc',timespan:window});
- const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12500);
+function validUrl(value){try{const p=new URL(value);return ['https:','http:'].includes(p.protocol)?p.href:null}catch{return null}}
+function identifyFront(title) {
+ for(const front of FRONT_DEFS)if(FRONT_PATTERNS[front.id]?.test(String(title||'')))return {id:front.id,label:front.labelEl};
+ return {id:'other',label:'Άλλες περιοχές'};
+}
+function cleanArticle(x,frontId){
+ const url=validUrl(x.url);
+ if(!url||!x.title)return null;
+ const title=String(x.title).trim().slice(0,350);
+ const group=frontId?FRONT_DEFS.find(f=>f.id===frontId):null;
+ const front=group?{id:group.id,label:group.labelEl}:identifyFront(title);
+ return {
+  title,url,domain:String(x.domain||new URL(url).hostname).slice(0,90),
+  date:String(x.seendate||'').slice(0,20),language:String(x.language||'').slice(0,35),
+  sourceCountry:String(x.sourcecountry||'').slice(0,60),
+  category:classify(title),frontId:front.id,frontLabel:front.label,
+  verification:'unverified_article',attribution:'Source headline; no independent fact check'
+ };
+}
+const GLOBAL_BASE='(Ukraine OR Russia OR Israel OR Gaza OR Lebanon OR Iran OR Sudan OR Yemen OR Congo OR Myanmar OR Mali OR Niger OR Taiwan OR Sahel)';
+function queryFor(front,focus){
+ if(!front)return GLOBAL_BASE+' ('+FOCUSES[focus]+')';
+ // Preserve the whole geographic/topic scope but replace old generic keywords with category-specific reporting terms.
+ const subject=front.query.replace(/\s+\([^()]+\)\s*$/,'');
+ return subject+' ('+FOCUSES[focus]+')';
+}
+async function remoteArticles(front,window,focus){
+ const query=new URLSearchParams({
+  query:queryFor(front,focus),mode:'artlist',
+  maxrecords:front?'140':'250',format:'json',sort:'datedesc',timespan:window
+ });
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),16000);
  try{
-  const r=await fetch('https://api.gdeltproject.org/api/v2/doc/doc?'+query.toString(),{signal:controller.signal,headers:{'Accept':'application/json','User-Agent':'GeoPulse/3.1 (public geopolitical news index)'}});
-  if(!r.ok)throw Error('Upstream status '+r.status);
-  const result=await r.json();if(!Array.isArray(result.articles))throw Error('Missing GDELT article list');
-  const dedup=new Set();
-  const articles=result.articles.map(cleanArticle).filter(Boolean).filter(x=>{if(dedup.has(x.url))return false;dedup.add(x.url);return true}).slice(0,40);
-  return {articles,updatedAt:new Date().toISOString(),status:'ok'};
- }finally{clearTimeout(timer)}
+  const response=await fetch('https://api.gdeltproject.org/api/v2/doc/doc?'+query.toString(),{
+   signal:controller.signal,
+   headers:{Accept:'application/json','User-Agent':'GeoPulse/4.0 (news index; sources attributed)'}
+  });
+  if(!response.ok)throw Error('GDELT HTTP '+response.status);
+  const data=await response.json();
+  if(!Array.isArray(data.articles))throw Error('GDELT did not return an article list');
+  const urls=new Set(),titles=new Set();
+  const articles=data.articles.map(x=>cleanArticle(x,front?.id)).filter(Boolean)
+   .filter(x=>{
+    const normalized=x.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+    if(urls.has(x.url)||titles.has(normalized))return false;
+    urls.add(x.url);titles.add(normalized);return true;
+   });
+  return articles;
+ }finally{clearTimeout(timeout)}
 }
 async function getFronts(url){
- const id=url.searchParams.get('id');
- if(!id)return {status:'catalogue',fronts:CATALOGUE,source:'GeoPulse editorial watchlist',message:'Monitoring categories and priority are editorial, not live battle intensity. Select a front to load news.'};
- const front=FRONT_DEFS.find(x=>x.id===id);
- if(!front)return {error:'Unknown region',status:'invalid'};
- const window=WINDOWS.has(url.searchParams.get('window'))?url.searchParams.get('window'):'72h';
- const key=id+'/'+window,old=CACHE.get(key);
- if(old&&Date.now()-old.time<8*60*1000)return {...old.value,cache:'fresh'};
+ const id=url.searchParams.get('id'),scope=url.searchParams.get('scope');
+ if(!id&&scope!=='global')return {
+  status:'catalogue',fronts:CATALOGUE,source:'GeoPulse geographic watchlist',
+  message:'Front listing is a watchlist, not an assertion of current fighting.'
+ };
+ let front=null;
+ if(scope!=='global'){
+  front=FRONT_DEFS.find(f=>f.id===id);
+  if(!front)return {status:'invalid',error:'Unknown monitored region'};
+ }
+ const window=WINDOWS.has(url.searchParams.get('window'))?url.searchParams.get('window'):'24h';
+ const focus=Object.hasOwn(FOCUSES,url.searchParams.get('focus'))?url.searchParams.get('focus'):'all';
+ const key=(front?.id||'global')+'/'+window+'/'+focus;
+ const old=CACHE.get(key),ttl=4*60*1000;
+ if(old&&Date.now()-old.time<ttl)return {...old.value,cache:'fresh'};
  try{
-  const fresh=await pullArticles(front,window);
-  const value={id,window,source:'GDELT DOC 2.0',...fresh,disclaimer:'Indexed media articles, not independently verified battles or live tactical geolocation. Article dates and reports may be incomplete.'};
-  CACHE.set(key,{time:Date.now(),value});
-  return {...value,cache:'new'};
+  const articles=await remoteArticles(front,window,focus);
+  const data={
+   status:'ok',source:'GDELT DOC 2.0',scope:front?.id||'global',window,focus,
+   updatedAt:new Date().toISOString(),articles,
+   counts:Object.fromEntries(['territory','losses','attacks','diplomacy','other'].map(key=>[key,articles.filter(a=>a.category===key).length])),
+   disclaimer:'Headline categorization identifies claims/reports, not verified land gains, territorial borders or casualties. Counts are numbers of indexed articles in this sample.'
+  };
+  CACHE.set(key,{time:Date.now(),value:data});
+  return {...data,cache:'new'};
  }catch(e){
-  if(old)return {...old.value,status:'stale',cache:'stale',message:'Upstream unavailable; showing older cached articles',error:String(e.message||e).slice(0,160)};
-  return {id,window,articles:[],status:'unavailable',source:'GDELT DOC 2.0',updatedAt:null,error:String(e.message||e).slice(0,160),message:'Live article source unavailable; no headlines have been fabricated.'};
+  if(old)return {
+   ...old.value,status:'stale',cache:'stale',
+   message:'GDELT unavailable; previously retrieved headlines, not current developments.',
+   error:String(e.message||e).slice(0,160)
+  };
+  return {
+   status:'unavailable',source:'GDELT DOC 2.0',scope:front?.id||'global',
+   focus,window,articles:[],counts:{},updatedAt:null,
+   message:'Live reporting source unavailable; no headlines or battle outcomes have been fabricated.',
+   error:String(e.message||e).slice(0,160)
+  };
  }
 }
-module.exports={getFronts};
+module.exports={getFronts,classify,queryFor};
