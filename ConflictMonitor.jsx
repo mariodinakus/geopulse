@@ -55,7 +55,7 @@ function useFeed(url){
 function FeedStatus({feed}){
  return <div className={'gp-radar-status '+(feed.status==='ok'?'ok':feed.status==='stale'?'stale':'')}>
   <span className="gp-radar-status-dot"/>
-  <strong>{feed.loading?'Έλεγχος πηγών…':feed.status==='ok'?'Συνδεδεμένο με GDELT':feed.status==='stale'?'Παλιότερες αναφορές':'Η πηγή δεν απαντά'}</strong>
+  <strong>{feed.loading?'Έλεγχος πηγών…':feed.status==='ok'?'Πηγή: '+(feed.source||'ειδησεογραφικό ευρετήριο'):feed.status==='stale'?'Παλιότερες αναφορές':'Η πηγή δεν απαντά'}</strong>
   {feed.updatedAt&&<span>Τελευταία ανάκτηση {new Date(feed.updatedAt).toLocaleString('el-GR')}</span>}
   <button onClick={feed.refresh} title="Έλεγχος νέων ειδήσεων" aria-label="Έλεγχος νέων ειδήσεων"><RefreshCw size={15}/></button>
  </div>;
@@ -139,6 +139,6 @@ export default function ConflictMonitor({selected,onFocus,onFronts}){
    <FeedStatus feed={localFeed}/>
    <StoryFeed feed={localFeed} limit={28}/>
   </>}
-  <div className="gp-radar-ethics"><ShieldAlert size={18}/><div><strong>Τι γνωρίζουμε πραγματικά</strong><p>Η κατηγορία προκύπτει αυτόματα από τον τίτλο ή τη θεματική αναζήτηση. Οι ειδήσεις μπορεί να περιλαμβάνουν ισχυρισμούς εμπόλεμων πλευρών. Χωρίς ανεξάρτητη τεκμηρίωση δεν επιβεβαιώνουμε καταλήψεις, αριθμό νεκρών ή αλλαγές συνόρων. Η θέση στη σφαίρα είναι περιφερειακή, όχι τρέχον επιχειρησιακό στίγμα.</p><a href="https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/" target="_blank" rel="noopener noreferrer">Πηγή ειδησεογραφικής αναζήτησης: GDELT DOC 2.0 <ArrowUpRight size={13}/></a></div></div>
+  <div className="gp-radar-ethics"><ShieldAlert size={18}/><div><strong>Τι γνωρίζουμε πραγματικά</strong><p>Πηγές: GDELT και εναλλακτικά Google News RSS / Bing News RSS. Αν η κύρια πηγή περιορίζει τα αιτήματα, εμφανίζεται η διαθέσιμη εφεδρική. Η κατηγορία προκύπτει αυτόματα από τον τίτλο ή τη θεματική αναζήτηση. Οι ειδήσεις μπορεί να περιλαμβάνουν ισχυρισμούς εμπόλεμων πλευρών. Χωρίς ανεξάρτητη τεκμηρίωση δεν επιβεβαιώνουμε καταλήψεις, αριθμό νεκρών ή αλλαγές συνόρων. Η θέση στη σφαίρα είναι περιφερειακή, όχι τρέχον επιχειρησιακό στίγμα.</p><a href="https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/" target="_blank" rel="noopener noreferrer">Πηγή ειδησεογραφικής αναζήτησης: GDELT DOC 2.0 <ArrowUpRight size={13}/></a></div></div>
  </section>;
 }
