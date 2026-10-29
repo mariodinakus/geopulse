@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState} from 'react';
 import {Radio,RefreshCw,AlertTriangle,ExternalLink,Clock3,Globe2,ChevronRight,Info} from 'lucide-react';
 import './conflict-live.css';
 const WINDOWS=[['24h','24 ώρες'],['72h','3 ημέρες'],['7d','7 ημέρες']];
-const stamp=s=>{if(!s)return 'Χρόνος μη διαθέσιμος';const d=String(s);return /^\\d{12,14}$/.test(d)?d.slice(6,8)+'/'+d.slice(4,6)+'/'+d.slice(0,4)+' '+d.slice(8,10)+':'+d.slice(10,12)+' UTC':d};
+const stamp=s=>{if(!s)return 'Χρόνος μη διαθέσιμος';const d=String(s);return /^\d{12,14}$/.test(d)?d.slice(6,8)+'/'+d.slice(4,6)+'/'+d.slice(0,4)+' '+d.slice(8,10)+':'+d.slice(10,12)+' UTC':d};
 function Status({status,updatedAt}){return <div className={'gp-live-status '+(status==='ok'?'ok':status==='stale'?'stale':'')}><span className="gp-live-ping"/><span>{status==='loading'?'Ανάκτηση δημοσιευμάτων…':status==='ok'?'Σύνδεση GDELT ενεργή':status==='stale'?'Προσωρινά παλαιότερα δεδομένα':'Η τροφοδοσία δεν είναι διαθέσιμη'}</span>{updatedAt&&<small>Έλεγχος {new Date(updatedAt).toLocaleString('el-GR')}</small>}</div>}
 export default function ConflictMonitor({selected,onFocus,onFronts}){
  const [fronts,setFronts]=useState([]),[catalogStatus,setCatalogStatus]=useState('loading');
