@@ -2,6 +2,7 @@ const {Readable}=require('node:stream');
 const unzipper=require('unzipper');
 const csv=require('csv-parser');
 const countryCache={};
+const {getFronts}=require('./conflict-fronts.cjs');
 const gedState={state:'not_loaded',events:[],updatedAt:null,error:null,source:'UCDP GED 26.1',yearRange:'2022–2025',revision:'26.1',retriedAt:0,counts:{}};
 const csvNumber=x=>{const n=Number(x);return Number.isFinite(n)?n:null};
 function startUCDP(){
@@ -39,6 +40,7 @@ const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=u
 const cache=new Map();async function remote(key,url,ttl){const previous=cache.get(key);if(previous&&Date.now()-previous.time<ttl)return previous.value;const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8500);try{const response=await fetch(url,{signal:controller.signal,headers:{'User-Agent':'GeoPulse/1.0 (+public-data-aggregation)','Accept':'application/json'}});if(!response.ok)throw Error('upstream '+response.status);const body=await response.json();cache.set(key,{time:Date.now(),value:body});return body;}finally{clearTimeout(timer);}}
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'public, max-age=180'});res.end(JSON.stringify(data));}
 async function api(url,res){
+if(url.pathname==='/api/fronts') {const d=await getFronts(url);return json(res,d.status==='invalid'?400:200,d)}
 if(url.pathname==='/api/countries'){
  try{const data=await remote('countries-v2','https://api.worldbank.org/v2/country?format=json&per_page=400',7*24*60*60*1000);return json(res,200,{source:'World Bank',retrievedAt:new Date().toISOString(),countries:countriesPayload(data)})}catch(e){return json(res,503,{source:'World Bank',countries:[],status:'unavailable'})}
 }
