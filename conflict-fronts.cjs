@@ -71,36 +71,133 @@ function cleanArticle(x,frontId){
  };
 }
 const GLOBAL_BASE='(Ukraine OR Russia OR Israel OR Gaza OR Lebanon OR Iran OR Sudan OR Yemen OR Congo OR Myanmar OR Mali OR Niger OR Taiwan OR Sahel)';
+const RSS_SUBJECTS={
+ ukraine:'Ukraine OR Russia OR Donetsk',
+ levant:'Israel OR Gaza OR Lebanon',
+ 'iran-gulf':'Iran OR Hormuz',
+ sudan:'Sudan OR Darfur',
+ 'red-sea':'Yemen OR Houthi OR "Red Sea"',
+ drc:'Congo OR DRC OR Goma OR M23',
+ myanmar:'Myanmar OR Burma',
+ sahel:'Mali OR "Burkina Faso" OR Niger OR Sahel',
+ taiwan:'Taiwan OR "Taiwan Strait"'
+};
+const RSS_FOCUS={
+ territory:'captured OR recaptured OR seized OR advances OR frontline OR control',
+ withdrawals:'retreat OR withdrawal OR withdrew OR pullback OR abandoned',
+ losses:'casualties OR killed OR wounded OR deaths OR losses',
+ attacks:'airstrike OR missile OR attack OR shelling OR offensive OR fighting',
+ diplomacy:'ceasefire OR negotiations OR talks OR truce',
+ all:'captured OR retreat OR casualties OR offensive OR ceasefire'
+};
+let gdeltCooldownUntil=0;
 function queryFor(front,focus){
  if(!front)return GLOBAL_BASE+' ('+FOCUSES[focus]+')';
- // Preserve the whole geographic/topic scope but replace old generic keywords with category-specific reporting terms.
  const subject=front.query.replace(/\s+\([^()]+\)\s*$/,'');
  return subject+' ('+FOCUSES[focus]+')';
 }
 async function remoteArticles(front,window,focus){
  const query=new URLSearchParams({
   query:queryFor(front,focus),mode:'artlist',
-  maxrecords:front?'140':'250',format:'json',sort:'datedesc',timespan:window
+  maxrecords:front?'120':'200',format:'json',sort:'datedesc',timespan:window
  });
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),16000);
+ const timeout=setTimeout(()=>controller.abort(),5200);
  try{
   const response=await fetch('https://api.gdeltproject.org/api/v2/doc/doc?'+query.toString(),{
    signal:controller.signal,
-   headers:{Accept:'application/json','User-Agent':'GeoPulse/4.0 (news index; sources attributed)'}
+   headers:{Accept:'application/json','User-Agent':'GeoPulse/4.1 (news index; sources attributed)'}
   });
   if(!response.ok)throw Error('GDELT HTTP '+response.status);
   const data=await response.json();
   if(!Array.isArray(data.articles))throw Error('GDELT did not return an article list');
   const urls=new Set(),titles=new Set();
-  const articles=data.articles.map(x=>cleanArticle(x,front?.id)).filter(Boolean)
+  return data.articles.map(x=>cleanArticle(x,front?.id)).filter(Boolean)
    .filter(x=>{
     const normalized=x.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
     if(urls.has(x.url)||titles.has(normalized))return false;
     urls.add(x.url);titles.add(normalized);return true;
    });
-  return articles;
  }finally{clearTimeout(timeout)}
+}
+function xmlDecode(value){
+ return String(value||'').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1')
+  .replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,(raw,key)=>{
+   const v=key.toLowerCase();
+   if(v.startsWith('#')){
+    const n=v[1]==='x'?parseInt(v.slice(2),16):parseInt(v.slice(1),10);
+    return Number.isInteger(n)&&n>0&&n<=0x10ffff?String.fromCodePoint(n):raw;
+   }
+   return {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '}[v]||raw;
+  }).trim();
+}
+function xmlValue(xml,tag){
+ const pattern=new RegExp('<'+tag+'(?:\\s[^>]*)?>([\\s\\S]*?)<\\/'+tag+'>','i');
+ return xmlDecode(xml.match(pattern)?.[1]||'');
+}
+function asTimeStamp(input){
+ const d=new Date(input);
+ if(!Number.isFinite(d.getTime()))return '';
+ return d.toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
+}
+function parseFeed(xml,front,sourceName){
+ if(!xml.includes('<rss')&&!xml.includes('<item'))throw Error(sourceName+' did not return RSS XML');
+ const rows=[],seen=new Set();
+ for(const entry of xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)){
+  const block=entry[1],title=xmlValue(block,'title'),link=xmlValue(block,'link');
+  const publisher=xmlValue(block,'source')||sourceName;
+  const article=cleanArticle({title,url:link,domain:publisher,seendate:asTimeStamp(xmlValue(block,'pubDate')),language:'en'},front?.id);
+  if(!article)continue;
+  const key=article.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  if(seen.has(key))continue;
+  seen.add(key);
+  article.provider=sourceName;
+  rows.push(article);
+ }
+ return rows.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,90);
+}
+function rssQuery(front,focus,window){
+ const subject=front?RSS_SUBJECTS[front.id]:'Ukraine OR Gaza OR Israel OR Sudan OR Congo OR Myanmar OR Russia OR Yemen';
+ const terms=RSS_FOCUS[focus]||RSS_FOCUS.all;
+ const when=window==='24h'?'1d':window==='72h'?'3d':'7d';
+ return '('+subject+') ('+terms+') when:'+when;
+}
+async function fetchRSS(front,window,focus,provider){
+ const q=rssQuery(front,focus,window);
+ const url=provider==='Google News RSS'
+ ?'https://news.google.com/rss/search?'+new URLSearchParams({q,hl:'en-US',gl:'US',ceid:'US:en'})
+ :'https://www.bing.com/news/search?'+new URLSearchParams({q,format:'rss'});
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),7200);
+ try{
+  const response=await fetch(url,{signal:controller.signal,
+   headers:{Accept:'application/rss+xml, application/xml, text/xml',
+    'User-Agent':'Mozilla/5.0 (compatible; GeoPulseNewsReader/1.0)'}});
+  if(!response.ok)throw Error(provider+' HTTP '+response.status);
+  const body=await response.text();
+  return parseFeed(body,front,provider);
+ }finally{clearTimeout(timeout)}
+}
+async function findArticles(front,window,focus){
+ const failed=[];
+ if(Date.now()>=gdeltCooldownUntil){
+  try{
+   const articles=await remoteArticles(front,window,focus);
+   if(articles.length)return {articles,source:'GDELT DOC 2.0',failed};
+   failed.push('GDELT returned zero articles');
+  }catch(e){
+   failed.push(String(e.message||e).slice(0,100));
+   if(/429|403/.test(String(e.message)))gdeltCooldownUntil=Date.now()+5*60*1000;
+  }
+ }else failed.push('GDELT is rate limited, cooldown active');
+ for(const source of ['Google News RSS','Bing News RSS']){
+  try{
+   const articles=await fetchRSS(front,window,focus,source);
+   if(articles.length)return {articles,source,failed};
+   failed.push(source+' returned no articles');
+  }catch(e){failed.push(String(e.message||e).slice(0,100))}
+ }
+ return {articles:[],source:'No live source',failed};
 }
 async function getFronts(url){
  const id=url.searchParams.get('id'),scope=url.searchParams.get('scope');
@@ -115,30 +212,28 @@ async function getFronts(url){
  }
  const window=WINDOWS.has(url.searchParams.get('window'))?url.searchParams.get('window'):'24h';
  const focus=Object.hasOwn(FOCUSES,url.searchParams.get('focus'))?url.searchParams.get('focus'):'all';
- const key=(front?.id||'global')+'/'+window+'/'+focus;
- const old=CACHE.get(key),ttl=4*60*1000;
+ const key=(front?.id||'global')+'/'+window+'/'+focus,old=CACHE.get(key),ttl=4*60*1000;
  if(old&&Date.now()-old.time<ttl)return {...old.value,cache:'fresh'};
  try{
-  const articles=await remoteArticles(front,window,focus);
+  const {articles,source,failed}=await findArticles(front,window,focus);
+  if(!articles.length)throw Error(failed.join('; ').slice(0,350)||'No matching articles');
   const data={
-   status:'ok',source:'GDELT DOC 2.0',scope:front?.id||'global',window,focus,
+   status:'ok',source,scope:front?.id||'global',window,focus,
    updatedAt:new Date().toISOString(),articles,
    counts:Object.fromEntries(['territory','withdrawals','losses','attacks','diplomacy','other'].map(key=>[key,articles.filter(a=>a.category===key).length])),
-   disclaimer:'Headline categorization identifies claims/reports, not verified land gains, territorial borders or casualties. Counts are numbers of indexed articles in this sample.'
+   fallbackUsed:source!=='GDELT DOC 2.0',
+   message:source==='GDELT DOC 2.0'?'GDELT news index':'GDELT unavailable or empty; retrieved published RSS headlines from '+source,
+   disclaimer:'Headlines are not verified battlefield events. Counts refer to media articles only. RSS publication dates and coverage are not complete.'
   };
   CACHE.set(key,{time:Date.now(),value:data});
   return {...data,cache:'new'};
  }catch(e){
-  if(old)return {
-   ...old.value,status:'stale',cache:'stale',
-   message:'GDELT unavailable; previously retrieved headlines, not current developments.',
-   error:String(e.message||e).slice(0,160)
-  };
+  if(old&&old.value.articles?.length)return {...old.value,status:'stale',cache:'stale',message:'Live sources unavailable; showing cached articles.'};
   return {
-   status:'unavailable',source:'GDELT DOC 2.0',scope:front?.id||'global',
+   status:'unavailable',source:'GDELT / Google News RSS / Bing News RSS',scope:front?.id||'global',
    focus,window,articles:[],counts:{},updatedAt:null,
-   message:'Live reporting source unavailable; no headlines or battle outcomes have been fabricated.',
-   error:String(e.message||e).slice(0,160)
+   message:'No news source returned articles. Try a wider time range.',
+   error:String(e.message||e).slice(0,350)
   };
  }
 }
