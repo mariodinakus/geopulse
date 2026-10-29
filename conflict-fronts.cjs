@@ -19,10 +19,11 @@ const CACHE=new Map();
 const WINDOWS=new Set(['24h','72h','7d']);
 const FOCUSES={
  all:'captured OR seized OR recaptured OR liberated OR control OR retreated OR withdrew OR withdrawal OR casualties OR killed OR wounded OR destroyed OR offensive OR airstrike OR fighting OR ceasefire',
- territory:'captured OR seized OR recaptured OR liberated OR occupied OR advances OR took control OR retreated OR withdrew OR withdrawal OR village OR town OR territory',
+ territory:'captured OR seized OR recaptured OR liberated OR occupied OR advances OR control OR village OR town OR territory',
+ withdrawals:'retreated OR withdrew OR withdrawal OR pullback OR retaking OR abandoned OR lost OR fallback',
  losses:'casualties OR killed OR wounded OR deaths OR dead OR fatalities OR injured OR losses OR destroyed OR prisoners OR displaced',
  attacks:'airstrike OR missile OR drone OR shelling OR bombardment OR clashes OR fighting OR offensive OR attack',
- diplomacy:'ceasefire OR truce OR peace talks OR negotiations OR agreement OR diplomacy OR mediation'
+ diplomacy:'ceasefire OR truce OR peace OR negotiations OR agreement OR diplomacy OR mediation'
 };
 const FRONT_PATTERNS={
  ukraine:/\b(ukrain|russia|russian|kyiv|kiev|kharkiv|donetsk|zaporizh|kherson)\w*/i,
@@ -35,6 +36,7 @@ const FRONT_PATTERNS={
  sahel:/\b(sahel|mali|burkina faso|niger|jihadists)\w*/i,
  taiwan:/\b(taiwan|taiwanese|taipei|taiwan strait)\w*/i
 };
+const WITHDRAWALS=/\b(retreat\w*|withdrew|withdraw\w*|withdrawal|pullback|pulled back|abandon\w*|lost control|forced back|falling back)\b/i;
 const TERRITORY=/\b(recaptur\w*|captur\w*|seiz\w*|liberat\w*|occupi\w*|territor\w*|retreat\w*|withdraw\w*|withdrawal|advanc\w*|lost control|take\w* control|took control|territorial gains|falls? to|fall of|conquer\w*)\b/i;
 const LOSSES=/\b(casualt\w*|fatalit\w*|killed|death\w*|dead|wounded|injur\w*|losses|soldiers lost|troops killed|destroyed|prisoners|pows?|humanitarian toll)\b/i;
 const ATTACKS=/\b(airstrik\w*|attack\w*|missile\w*|drone\w*|shell\w*|bombard\w*|offensive\w*|fighting|clashes|battle\w*|explosions?)\b/i;
@@ -42,7 +44,8 @@ const DIPLOMACY=/\b(ceasefire|truce|negotiat\w*|peace talks|peace deal|diplomac\
 function classify(title) {
  const text=String(title||'');
  // Territorial outcomes and losses are editorial signals extracted from headlines, NOT confirmed event classifications.
- if(TERRITORY.test(text))return 'territory';
+ if(WITHDRAWALS.test(text))return 'withdrawals';
+ if(TERRITORY.test(text)&&!/\b(captured soldiers|troops captured|captured prisoners|captured troops|hostages captured)\b/i.test(text))return 'territory';
  if(LOSSES.test(text))return 'losses';
  if(ATTACKS.test(text))return 'attacks';
  if(DIPLOMACY.test(text))return 'diplomacy';
@@ -120,7 +123,7 @@ async function getFronts(url){
   const data={
    status:'ok',source:'GDELT DOC 2.0',scope:front?.id||'global',window,focus,
    updatedAt:new Date().toISOString(),articles,
-   counts:Object.fromEntries(['territory','losses','attacks','diplomacy','other'].map(key=>[key,articles.filter(a=>a.category===key).length])),
+   counts:Object.fromEntries(['territory','withdrawals','losses','attacks','diplomacy','other'].map(key=>[key,articles.filter(a=>a.category===key).length])),
    disclaimer:'Headline categorization identifies claims/reports, not verified land gains, territorial borders or casualties. Counts are numbers of indexed articles in this sample.'
   };
   CACHE.set(key,{time:Date.now(),value:data});
