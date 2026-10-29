@@ -1,0 +1,59 @@
+
+.gp-radar{color:#e6f1f7;font-size:12px;line-height:1.5;padding:0 0 25px}
+.gp-radar-hero{background:linear-gradient(145deg,#271d29 0%,#162836 65%,#102733);border:1px solid #633e42;border-radius:13px;padding:19px 17px;margin:14px 0 19px;box-shadow:inset 0 1px 0 #aa777722}
+.gp-radar-kicker{display:flex;align-items:center;flex-wrap:wrap;gap:7px;color:#ff938d;font-weight:800;font-size:10px;letter-spacing:1.1px}
+.gp-radar-live-pill{font-size:9px;border:1px solid #9f5254;border-radius:30px;padding:4px 7px;background:#6e35343c;color:#f6bab1;letter-spacing:.6px}
+.gp-radar-hero h2{font-size:22px;font-weight:800;line-height:1.17;letter-spacing:-.6px;margin:13px 0 10px;color:#fff}
+.gp-radar-hero p{color:#b5c4d3;margin:0;line-height:1.65;font-size:12px}
+.gp-radar-update{color:#81d9ce;margin-top:14px;display:flex;gap:6px;align-items:center;font-size:10px;font-weight:700}
+.gp-radar-head{display:flex;align-items:end;justify-content:space-between;gap:8px;margin:18px 0 10px}
+.gp-radar-head span:first-child{font-size:10px;color:#e09b98;font-weight:800;letter-spacing:1px}
+.gp-radar-head h3{font-size:18px;line-height:1.2;margin:4px 0 0}
+.gp-radar-tiny{font-size:9px;color:#92aebb;text-align:right;flex:0 0 auto}
+.gp-radar-filters{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.gp-radar-filters button{padding:8px 10px;color:#b9cdd9;background:#142636;border:1px solid #2d4c5a;border-radius:6px;font-size:10px;font-weight:700;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.gp-radar-filters button.selected{border-color:#c57b75;color:#fff;background:#4b3139;box-shadow:inset 0 0 0 1px #954a4822}
+.gp-radar-filter-dot{display:inline-block;width:6px;height:6px;border-radius:50%;flex:none}
+.gp-radar-periods{display:flex;gap:6px;margin:10px 0}
+.gp-radar-periods button{flex:1;padding:8px 5px;background:#112535;border:1px solid #284757;border-radius:6px;font-size:9px;font-weight:700;letter-spacing:.35px;color:#9cb7c5}
+.gp-radar-periods button.selected{background:#1a4b4a;color:#c9fff8;border-color:#68b4ad}
+.gp-radar-status{display:flex;gap:7px;align-items:center;flex-wrap:wrap;color:#caa1a1;border-bottom:1px solid #253f4e;padding:8px 0 11px;margin-bottom:5px;font-size:10px}
+.gp-radar-status.ok{color:#74dec7}.gp-radar-status.stale{color:#f0c48d}
+.gp-radar-status-dot{width:7px;height:7px;background:currentColor;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor}
+.gp-radar-status>strong{font-size:10px}
+.gp-radar-status>span:not(.gp-radar-status-dot){color:#9cafbb;flex:1;font-size:9px}
+.gp-radar-status button{border:1px solid #335866;border-radius:6px;background:#1c3644;color:#b3e6e1;padding:7px;display:flex;align-items:center}
+.gp-radar-count{font-size:10px;color:#8eacb9;margin:12px 0}
+.gp-radar-stories{display:grid;gap:8px;margin-top:11px}
+.gp-radar-story{display:block;text-decoration:none;background:linear-gradient(110deg,#152736,#12202d);border:1px solid #315061;color:#eaf6fa;border-radius:9px;padding:12px;transition:background .15s,border-color .15s}
+.gp-radar-story:hover{border-color:#78bfc4;background:#213744}
+.gp-radar-story-top{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.gp-radar-category{padding:3px 6px;font-size:8px;letter-spacing:.2px;border:1px solid;border-radius:5px;font-weight:800}
+.gp-radar-frontlabel{font-size:10px;color:#aec7d4;display:flex;gap:3px;align-items:center}
+.gp-radar-story>strong{font-size:12px;line-height:1.5;display:block;margin:10px 0 8px;font-weight:750}
+.gp-radar-meta{display:flex;align-items:center;gap:5px;color:#93adbc;font-size:9px;flex-wrap:wrap}
+.gp-radar-dot{width:3px;height:3px;background:#71929d;border-radius:50%;margin:0 3px}
+.gp-radar-story-bottom{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid #2e4453;padding-top:9px;margin-top:11px;color:#89cdc6;font-size:8px;letter-spacing:.2px}
+.gp-radar-story-bottom svg{flex:0 0 auto}
+.gp-radar-empty{padding:17px;border:1px dashed #3d5766;border-radius:9px;background:#132535;color:#9fb5c2;display:grid;gap:8px}
+.gp-radar-empty strong{font-size:11px;color:#d2e1e6}.gp-radar-empty p{margin:0;font-size:10px}
+.gp-radar-separator{border-top:1px solid #345062;margin:26px 0 20px}
+.gp-radar-front-selector{width:100%;background:#1a303d;color:#f1f7fa;border:1px solid #507080;border-radius:9px;padding:12px;display:flex;gap:9px;align-items:center;justify-content:space-between;text-align:left}
+.gp-radar-front-selector>span{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
+.gp-radar-front-selector strong{font-size:12px}
+.gp-radar-front-selector small{font-size:9px;color:#99b6c2}
+.gp-radar-front-selector svg:last-child{transition:transform .2s}
+.gp-radar-rotated{transform:rotate(90deg)}
+.gp-radar-front-list{max-height:240px;overflow-y:auto;display:grid;gap:5px;padding:10px;border:1px solid #355264;background:#0d1c29;margin-top:6px;border-radius:8px}
+.gp-radar-front-list button{display:grid;text-align:left;gap:3px;padding:10px;border:1px solid #2d4c5a;background:#162837;color:#dceef0;border-radius:7px}
+.gp-radar-front-list button.active{border-color:#e07873;background:#422b35}
+.gp-radar-front-list button strong{font-size:11px}
+.gp-radar-front-list button small{font-size:9px;color:#9bb5c1}
+.gp-radar-context{margin:11px 0 16px;color:#a7c1cc;font-size:11px}
+.gp-radar-context p{margin:0 0 4px}.gp-radar-context span{color:#809aa8;font-size:9px}
+.gp-radar-ethics{display:flex;gap:11px;border:1px solid #395568;background:#122536;color:#bed0da;border-radius:9px;padding:13px;margin-top:25px}
+.gp-radar-ethics>svg{flex:none;color:#e2b686}
+.gp-radar-ethics strong{color:#f0d0ab;font-size:11px}
+.gp-radar-ethics p{font-size:10px;line-height:1.65;margin:7px 0}
+.gp-radar-ethics a{display:inline-flex;gap:4px;align-items:center;color:#7ed1d3;text-decoration:none;font-size:10px}
+@media(max-width:900px){.gp-radar-hero{padding:15px}.gp-radar-hero h2{font-size:20px}.gp-radar-head h3{font-size:17px}.gp-radar-filters{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}.gp-radar-filters button{flex:0 0 auto}}
