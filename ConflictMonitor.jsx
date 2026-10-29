@@ -1,47 +1,144 @@
 import React,{useEffect,useMemo,useState} from 'react';
-import {Radio,RefreshCw,AlertTriangle,ExternalLink,Clock3,Globe2,ChevronRight,Info} from 'lucide-react';
+import {Radio,RefreshCw,AlertTriangle,ExternalLink,Clock3,ChevronRight,Info,ArrowUpRight,MapPin,ShieldAlert,Activity} from 'lucide-react';
 import './conflict-live.css';
-const WINDOWS=[['24h','24 ώρες'],['72h','3 ημέρες'],['7d','7 ημέρες']];
-const classify=t=>{const s=String(t||'').toLowerCase();return /\b(airstrike|strike|attack|missile|drone|bombardment|shelling|clashes|clash|fighting|offensive|battle|explosion)\b/.test(s)?'clashes':/\b(ceasefire|peace talks|negotiations|truce|diplomacy|deal)\b/.test(s)?'diplomacy':'other'};
-const stamp=s=>{if(!s)return 'Χρόνος μη διαθέσιμος';const d=String(s);return /^\d{12,14}$/.test(d)?d.slice(6,8)+'/'+d.slice(4,6)+'/'+d.slice(0,4)+' '+d.slice(8,10)+':'+d.slice(10,12)+' UTC':d};
-function Status({status,updatedAt}){return <div className={'gp-live-status '+(status==='ok'?'ok':status==='stale'?'stale':'')}><span className="gp-live-ping"/><span>{status==='loading'?'Ανάκτηση δημοσιευμάτων…':status==='ok'?'Σύνδεση GDELT ενεργή':status==='stale'?'Προσωρινά παλαιότερα δεδομένα':'Η τροφοδοσία δεν είναι διαθέσιμη'}</span>{updatedAt&&<small>Έλεγχος {new Date(updatedAt).toLocaleString('el-GR')}</small>}</div>}
+import './conflict-radar.css';
+
+const WINDOWS=[['24h','24 ΩΡΕΣ'],['72h','3 ΗΜΕΡΕΣ'],['7d','7 ΗΜΕΡΕΣ']];
+const FOCUSES=[
+ ['territory','Καταλήψεις'],
+ ['withdrawals','Υποχωρήσεις'],
+ ['losses','Απώλειες'],
+ ['attacks','Επιθέσεις'],
+ ['diplomacy','Διπλωματία'],
+ ['all','Όλα']
+];
+const TOPICS={
+ territory:{label:'ΚΑΤΑΛΗΨΕΙΣ / ΑΝΑΚΑΤΑΛΗΨΕΙΣ',short:'Εδαφικές αλλαγές',color:'#ecae70'},
+ withdrawals:{label:'ΥΠΟΧΩΡΗΣΕΙΣ / ΑΠΩΛΕΙΑ ΕΛΕΓΧΟΥ',short:'Υποχωρήσεις',color:'#ed8c91'},
+ losses:{label:'ΑΝΑΦΟΡΕΣ ΑΠΩΛΕΙΩΝ',short:'Απώλειες',color:'#d99ade'},
+ attacks:{label:'ΜΑΧΕΣ / ΕΠΙΘΕΣΕΙΣ',short:'Επιθέσεις',color:'#f07778'},
+ diplomacy:{label:'ΔΙΠΛΩΜΑΤΙΚΕΣ ΕΞΕΛΙΞΕΙΣ',short:'Διπλωματία',color:'#6ed8c7'},
+ other:{label:'ΣΥΝΑΦΗΣ ΔΗΜΟΣΙΟΓΡΑΦΙΚΗ ΑΝΑΦΟΡΑ',short:'Άλλη εξέλιξη',color:'#96b9d0'}
+};
+function dateString(s){
+ const x=String(s||'');
+ if(/^\d{12,14}$/.test(x))return x.slice(6,8)+'/'+x.slice(4,6)+'/'+x.slice(0,4)+' · '+x.slice(8,10)+':'+x.slice(10,12)+' UTC';
+ return x||'Ώρα μη διαθέσιμη';
+}
+function useFeed(url){
+ const [response,setResponse]=useState({status:'loading',articles:[]});
+ const [loading,setLoading]=useState(true),[refreshId,setRefreshId]=useState(0);
+ useEffect(()=>{
+  if(!url)return;
+  let active=true;
+  const fetchLatest=async()=>{
+   if(!active)return;
+   setLoading(true);
+   const controller=new AbortController();
+   const timeout=setTimeout(()=>controller.abort(),21000);
+   try{
+    const res=await fetch(url,{signal:controller.signal,cache:'no-store'});
+    if(!res.ok)throw Error('HTTP '+res.status);
+    const body=await res.json();
+    if(active)setResponse(body);
+   }catch(e){
+    if(active)setResponse(previous=>({...previous,status:previous.articles?.length?'stale':'unavailable',
+     message:'Δεν κατέστη δυνατή η ανάκτηση νεότερων δημοσιευμάτων.'}));
+   }finally{clearTimeout(timeout);if(active)setLoading(false)}
+  };
+  fetchLatest();
+  const timer=setInterval(fetchLatest,5*60*1000);
+  return()=>{active=false;clearInterval(timer)};
+ },[url,refreshId]);
+ return {...response,loading,refresh:()=>setRefreshId(v=>v+1)};
+}
+function FeedStatus({feed}){
+ return <div className={'gp-radar-status '+(feed.status==='ok'?'ok':feed.status==='stale'?'stale':'')}>
+  <span className="gp-radar-status-dot"/>
+  <strong>{feed.loading?'Έλεγχος πηγών…':feed.status==='ok'?'Συνδεδεμένο με GDELT':feed.status==='stale'?'Παλιότερες αναφορές':'Η πηγή δεν απαντά'}</strong>
+  {feed.updatedAt&&<span>Τελευταία ανάκτηση {new Date(feed.updatedAt).toLocaleString('el-GR')}</span>}
+  <button onClick={feed.refresh} title="Έλεγχος νέων ειδήσεων" aria-label="Έλεγχος νέων ειδήσεων"><RefreshCw size={15}/></button>
+ </div>;
+}
+function WindowTabs({value,onChange}){
+ return <div className="gp-radar-periods">{WINDOWS.map(([id,label])=><button key={id} className={value===id?'selected':''} onClick={()=>onChange(id)}>{label}</button>)}</div>;
+}
+function FocusTabs({value,onChange}){
+ return <div className="gp-radar-filters">{FOCUSES.map(([id,label])=><button key={id} className={value===id?'selected':''} onClick={()=>onChange(id)}><span className="gp-radar-filter-dot" style={{background:TOPICS[id]?.color||'#89cbd0'}}/>{label}</button>)}</div>;
+}
+function Story({item,global=false}){
+ const category=TOPICS[item.category]||TOPICS.other;
+ return <a className="gp-radar-story" href={item.url} target="_blank" rel="noopener noreferrer">
+  <div className="gp-radar-story-top">
+   <span className="gp-radar-category" style={{borderColor:category.color,color:category.color}}>{category.label}</span>
+   {global&&<span className="gp-radar-frontlabel"><MapPin size={11}/>{item.frontLabel||'Παγκόσμια'}</span>}
+  </div>
+  <strong>{item.title}</strong>
+  <div className="gp-radar-meta"><Clock3 size={12}/>{dateString(item.date)}<span className="gp-radar-dot"/> {item.domain||'Άγνωστη πηγή'}</div>
+  <div className="gp-radar-story-bottom"><span>ΑΝΑΦΟΡΑ ΜΕΣΟΥ · ΟΧΙ ΕΠΑΛΗΘΕΥΜΕΝΟ ΑΠΟ ΤΟ GEOPULSE</span><ExternalLink size={13}/></div>
+ </a>;
+}
+function StoryFeed({feed,global=false,limit=24}){
+ const records=Array.isArray(feed.articles)?feed.articles:[];
+ return <div className="gp-radar-stories">
+  {records.length>0&&<p className="gp-radar-count">Εμφανίζονται {Math.min(records.length,limit)} από {records.length} καταχωρισμένα δημοσιεύματα. Δεν είναι αριθμός πραγματικών μαχών ή απωλειών.</p>}
+  {records.slice(0,limit).map((a,i)=><Story item={a} global={global} key={a.url+i}/>)}
+  {!records.length&&<div className="gp-radar-empty">
+   <AlertTriangle size={19}/>
+   <strong>{feed.loading?'Ανάκτηση ειδήσεων…':'Δεν υπάρχουν διαθέσιμα αποτελέσματα σε αυτό το δείγμα.'}</strong>
+   <p>{feed.message||'Άλλαξε κατηγορία ή χρονικό διάστημα. Η απουσία τίτλων δεν σημαίνει ότι δεν σημειώθηκαν γεγονότα.'}</p>
+  </div>}
+ </div>;
+}
 export default function ConflictMonitor({selected,onFocus,onFronts}){
  const [fronts,setFronts]=useState([]),[catalogStatus,setCatalogStatus]=useState('loading');
- const [window,setWindow]=useState('72h'),[articleState,setArticleState]=useState({status:'loading',articles:[]}),[tick,setTick]=useState(0),[filter,setFilter]=useState('all');
- useEffect(()=>{let live=true;fetch('/api/fronts').then(r=>r.ok?r.json():Promise.reject(Error('Catalogue unavailable'))).then(d=>{if(!live)return;setFronts(d.fronts||[]);onFronts(d.fronts||[]);setCatalogStatus('ok')}).catch(()=>{if(live)setCatalogStatus('unavailable')});return()=>{live=false}},[onFronts]);
- const current=useMemo(()=>fronts.find(f=>f.id===(selected?.kind==='front'?selected.id:null))||fronts[0],[fronts,selected?.id,selected?.kind]);
+ const [globalWindow,setGlobalWindow]=useState('24h'),[globalFocus,setGlobalFocus]=useState('territory');
+ const [localWindow,setLocalWindow]=useState('24h'),[localFocus,setLocalFocus]=useState('territory');
+ const [showFronts,setShowFronts]=useState(false);
  useEffect(()=>{
-  if(!current)return;
-  let live=true;const ctrl=new AbortController();
-  const load=()=>{if(!live)return;setArticleState(s=>({...s,status:'loading'}));fetch('/api/fronts?id='+encodeURIComponent(current.id)+'&window='+window,{signal:ctrl.signal}).then(r=>r.ok?r.json():Promise.reject(Error('Upstream unavailable'))).then(d=>{if(live)setArticleState(d)}).catch(e=>{if(live&&e.name!=='AbortError')setArticleState({status:'unavailable',articles:[],message:'Δεν είναι διαθέσιμες νέες πηγές.'})})};
-  load();const id=setInterval(load,8*60*1000);
-  return()=>{live=false;clearInterval(id);ctrl.abort()};
- },[current?.id,window,tick]);
- const choose=f=>{setFilter('all');onFocus({...f,kind:'front',name:f.labelEl||f.label,title:f.labelEl||f.label,source:'https://www.gdeltproject.org/'})};
- const stories=articleState.articles||[];
- const filteredStories=stories.filter(a=>filter==='all'||classify(a.title)===filter);
- return <section className="gp-live" aria-label="Παρακολούθηση συγκρούσεων">
-  <div className="gp-live-hero"><div className="gp-live-kicker"><Radio size={15}/> GLOBAL CONFLICT MONITOR <span className="gp-live-chip">NEWS RADAR</span></div>
-    <h2>Τα μέτωπα που επηρεάζουν τον κόσμο.</h2><p>Παρακολούθηση συγκρούσεων και στρατηγικών εστιών έντασης, με πηγές και ευρύτερες συνέπειες.</p>
-    <div className="gp-live-note"><Info size={14}/> Οι δείκτες δείχνουν γενικές περιοχές, όχι θέσεις μαχών ή μετακινήσεις δυνάμεων.</div>
+  let active=true;
+  fetch('/api/fronts',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject(Error('Not available'))).then(data=>{
+   if(!active)return;
+   setFronts(data.fronts||[]);onFronts(data.fronts||[]);setCatalogStatus('ok');
+  }).catch(()=>{if(active)setCatalogStatus('unavailable')});
+  return()=>{active=false};
+ },[onFronts]);
+ const current=useMemo(()=>fronts.find(f=>f.id===(selected?.kind==='front'?selected.id:null))||fronts[0],[fronts,selected?.id,selected?.kind]);
+ const globalUrl='/api/fronts?scope=global&window='+globalWindow+'&focus='+globalFocus;
+ const localUrl=current?'/api/fronts?id='+encodeURIComponent(current.id)+'&window='+localWindow+'&focus='+localFocus:null;
+ const globalFeed=useFeed(globalUrl),localFeed=useFeed(localUrl);
+ const choose=f=>{
+  setShowFronts(false);
+  onFocus({...f,kind:'front',name:f.labelEl||f.label,title:f.labelEl||f.label,source:'https://www.gdeltproject.org/'});
+ };
+ return <section className="gp-radar" aria-label="Συνεχής ενημέρωση πολεμικών μετώπων">
+  <div className="gp-radar-hero">
+   <div className="gp-radar-kicker"><Radio size={16}/> GEOPULSE / BATTLEFIELD UPDATES <span className="gp-radar-live-pill">NEWS RADAR</span></div>
+   <h2>Ποιος προελαύνει. Ποιος υποχωρεί. Τι αναφέρεται.</h2>
+   <p>Δημοσιεύματα για καταλήψεις, ανακαταλήψεις, υποχωρήσεις, απώλειες και επιθέσεις από όλα τα μεγάλα μέτωπα.</p>
+   <div className="gp-radar-update"><Activity size={14}/> Αυτόματος έλεγχος κάθε 5 λεπτά όσο η καρτέλα είναι ανοιχτή</div>
   </div>
-  {catalogStatus==='unavailable'&&<div className="gp-live-warning"><AlertTriangle size={15}/> Ο κατάλογος δεν φορτώθηκε. Δεν εμφανίζουμε υποθετικά μέτωπα.</div>}
-  <div className="gp-live-heading"><strong>ΠΑΓΚΟΣΜΙΟΣ ΧΑΡΤΗΣ ΕΣΤΙΩΝ</strong><small>{fronts.length} περιοχές παρακολούθησης</small></div>
-  <div className="gp-live-fronts">{fronts.map((f,i)=><button key={f.id} onClick={()=>choose(f)} className={'gp-live-front '+(current?.id===f.id?'active':'')} aria-pressed={current?.id===f.id}><span className="gp-live-rank">{String(i+1).padStart(2,'0')}</span><span className="gp-live-front-name"><strong>{f.labelEl||f.label}</strong><small>{f.category==='flashpoint'?'Στρατηγική εστία έντασης':'Ένοπλη σύγκρουση'} · {f.region}</small></span><ChevronRight size={15}/></button>)}</div>
-  {current&&<div className="gp-live-dossier">
-   <div className="gp-live-heading"><strong>ΑΝΑΛΥΣΗ ΜΕΤΩΠΟΥ</strong><small>{current.impact==='Global'?'Παγκόσμια σημασία':'Περιφερειακή σημασία'}</small></div>
-   <h3>{current.labelEl||current.label}</h3>
-   <p>{current.why}</p>
-   <div className="gp-live-tags">{(current.channels||[]).map(ch=><span key={ch}>{ch}</span>)}</div>
-   {current.category==='flashpoint'&&<div className="gp-live-warning"><Info size={14}/> Εστία έντασης — δεν δηλώνει ότι διεξάγεται πόλεμος.</div>}
-   <div className="gp-live-heading gp-live-reporthead"><strong>ΝΕΟΤΕΡΑ ΔΗΜΟΣΙΕΥΜΑΤΑ</strong><button onClick={()=>setTick(t=>t+1)} title="Έλεγχος ενημέρωσης" aria-label="Έλεγχος ενημέρωσης"><RefreshCw size={16}/></button></div>
-   <div className="gp-live-windows">{WINDOWS.map(([id,name])=><button key={id} onClick={()=>setWindow(id)} className={window===id?'active':''}>{name}</button>)}</div>
-   <Status status={articleState.status} updatedAt={articleState.updatedAt}/>
-   <div className="gp-live-windows">{[['all','Όλα'],['clashes','Αναφορές μαχών'],['diplomacy','Διπλωματία']].map(([id,label])=><button key={id} className={filter===id?'active':''} onClick={()=>setFilter(id)}>{label}</button>)}</div>
-   {stories.length>0&&<div className="gp-live-result-count">{stories.length} δημοσιεύματα στο επιστρεφόμενο δείγμα — <strong>όχι</strong> αριθμός μαχών</div>}
-   <div className="gp-live-articles">{filteredStories.length?filteredStories.map((a,i)=><a href={a.url} key={a.url+i} target="_blank" rel="noopener noreferrer" className="gp-live-article"><span className="gp-live-article-meta"><Clock3 size={12}/> Εντοπίστηκε {stamp(a.date)} · {a.domain||'Πηγή'}</span><span className="gp-live-read">{classify(a.title)==='clashes'?'ΤΙΤΛΟΣ ΜΕ ΑΝΑΦΟΡΑ ΣΕ ΜΑΧΗ/ΕΠΙΘΕΣΗ':classify(a.title)==='diplomacy'?'ΤΙΤΛΟΣ ΔΙΠΛΩΜΑΤΙΚΗΣ ΕΞΕΛΙΞΗΣ':'ΔΙΕΘΝΗΣ ΕΞΕΛΙΞΗ'} · ΑΥΤΟΜΑΤΗ ΤΑΞΙΝΟΜΗΣΗ</span><strong>{a.title}</strong><span className="gp-live-read">ΑΝΟΙΓΜΑ ΠΡΩΤΟΓΕΝΟΥΣ ΔΗΜΟΣΙΕΥΜΑΤΟΣ <ExternalLink size={12}/></span></a>):<p className="gp-live-empty">{articleState.status==='loading'?'Αναζητούνται πρόσφατες πηγές…':articleState.message||'Δεν επιστράφηκαν άρθρα για αυτό το διάστημα ή για το επιλεγμένο φίλτρο. Δεν σημαίνει ότι δεν υπάρχουν εξελίξεις.'}</p>}</div>
-   <div className="gp-live-foot"><AlertTriangle size={15}/> Το GDELT καταγράφει ειδησεογραφική κάλυψη. Δεν επαληθεύει ανεξάρτητα την έκβαση μαχών, τις απώλειες ή τα σύνορα ελέγχου. Οι τίτλοι μπορεί να περιέχουν ανακριβείς ισχυρισμούς.</div>
-   <a href="https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/" target="_blank" rel="noopener noreferrer" className="gp-live-method">ΜΕΘΟΔΟΛΟΓΙΑ ΚΑΙ ΠΗΓΗ <ExternalLink size={13}/></a>
-  </div>}
+  <div className="gp-radar-head"><div><span>01 / ΠΑΓΚΟΣΜΙΟΣ ΠΑΛΜΟΣ</span><h3>Νεότερες πολεμικές εξελίξεις</h3></div><span className="gp-radar-tiny">Κυλιόμενη ειδησεογραφία</span></div>
+  <FocusTabs value={globalFocus} onChange={setGlobalFocus}/>
+  <WindowTabs value={globalWindow} onChange={setGlobalWindow}/>
+  <FeedStatus feed={globalFeed}/>
+  <StoryFeed feed={globalFeed} global limit={12}/>
+  <div className="gp-radar-separator"/>
+  <div className="gp-radar-head"><div><span>02 / ΑΝΑ ΜΕΤΩΠΟ</span><h3>Στοχευμένη παρακολούθηση</h3></div><span className="gp-radar-tiny">{fronts.length} περιοχές</span></div>
+  {catalogStatus==='unavailable'&&<div className="gp-radar-empty">Ο κατάλογος περιοχών είναι προσωρινά μη διαθέσιμος.</div>}
+  <button className="gp-radar-front-selector" onClick={()=>setShowFronts(v=>!v)} aria-expanded={showFronts}>
+   <span><MapPin size={17}/> <strong>{current?.labelEl||current?.label||'Επιλογή μετώπου'}</strong><small>{current?.region||''}</small></span><ChevronRight className={showFronts?'gp-radar-rotated':''} size={18}/>
+  </button>
+  {showFronts&&<div className="gp-radar-front-list">{fronts.map(f=><button className={f.id===current?.id?'active':''} key={f.id} onClick={()=>choose(f)}>
+   <strong>{f.labelEl||f.label}</strong><small>{f.category==='flashpoint'?'Στρατηγική ένταση, όχι αναγκαστικά πόλεμος':'Σύγκρουση / περιοχή παρακολούθησης'}</small>
+  </button>)}</div>}
+  {current&&<>
+   <div className="gp-radar-context"><p>{current.why}</p><span>Γεωγραφικός δείκτης περιοχής, όχι τρέχουσα στρατιωτική θέση.</span></div>
+   <FocusTabs value={localFocus} onChange={setLocalFocus}/>
+   <WindowTabs value={localWindow} onChange={setLocalWindow}/>
+   <FeedStatus feed={localFeed}/>
+   <StoryFeed feed={localFeed} limit={28}/>
+  </>}
+  <div className="gp-radar-ethics"><ShieldAlert size={18}/><div><strong>Τι γνωρίζουμε πραγματικά</strong><p>Η κατηγορία προκύπτει αυτόματα από τον τίτλο ή τη θεματική αναζήτηση. Οι ειδήσεις μπορεί να περιλαμβάνουν ισχυρισμούς εμπόλεμων πλευρών. Χωρίς ανεξάρτητη τεκμηρίωση δεν επιβεβαιώνουμε καταλήψεις, αριθμό νεκρών ή αλλαγές συνόρων. Η θέση στη σφαίρα είναι περιφερειακή, όχι τρέχον επιχειρησιακό στίγμα.</p><a href="https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/" target="_blank" rel="noopener noreferrer">Πηγή ειδησεογραφικής αναζήτησης: GDELT DOC 2.0 <ArrowUpRight size={13}/></a></div></div>
  </section>;
 }
