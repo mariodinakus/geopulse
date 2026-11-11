@@ -5,6 +5,9 @@ import {countries as seedCountries,events,arsenal} from './data.js';
 import {bases,chokepoints,alliances,nuclear,memberships,nuclearStatus,commonMemberships} from './strategic.js';
 import './premium.css';
 import ConflictMonitor from './ConflictMonitor.jsx';
+import {useGame,PlayerHUD,QuestPanel,HuntBanner,Floats,Toasts,AchievementsModal,BootScreen,PowerCard} from './Game.jsx';
+import {Trophy,Crosshair} from 'lucide-react';
+import './game.css';
 const ThreeGlobe=React.lazy(()=>import('react-globe.gl'));
 const MODULES=[{id:'world',label:'World',icon:Globe2},{id:'conflicts',label:'Conflicts',icon:Shield},{id:'relations',label:'Relations',icon:GitBranch},{id:'trade',label:'Trade',icon:Anchor},{id:'military',label:'Military',icon:Satellite},{id:'rewind',label:'Rewind',icon:Clock3},{id:'intelligence',label:'Intelligence',icon:Activity}];
 const MODES=['CAUSE & EFFECT','RIPPLE EFFECT','BLIND SPOTS','WHAT IF?'];
@@ -39,6 +42,9 @@ function App(){
  const [year,setYear]=useState(2026),[analysisMode,setAnalysisMode]=useState('CAUSE & EFFECT'),[shock,setShock]=useState(40),[dependency,setDependency]=useState(60),[compareIso,setCompareIso]=useState('USA');
  const globe=useRef(null),canvas=useRef(null),searchRef=useRef(null);
  const isMobile=w<900;
+ const g=useGame();
+ const [boot,setBoot]=useState(()=>{try{return sessionStorage.getItem('gp.booted')!=='1'}catch{return true}}),[trophies,setTrophies]=useState(false);
+ const hunting=g.hunt?.status==='playing';
  useEffect(()=>{const fn=()=>{setW(window.innerWidth);setH(window.innerHeight)};window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn)},[]);
  useEffect(()=>{let active=true;fetch(worldUrl).then(r=>r.ok?r.json():Promise.reject(Error('map data missing'))).then(r=>{if(active){setFeatures(r.features||[]);setGeoStatus('ready')}}).catch(()=>{if(active)setGeoStatus('offline')});return()=>{active=false}},[]);
  useEffect(()=>{let active=true;const timer=AbortSignal.timeout?.(12500);fetch('/api/news',{signal:timer}).then(r=>r.ok?r.json():Promise.reject()).then(r=>{if(active){setNews((r.articles||[]).filter(n=>n.url&&n.title).slice(0,55));setNewsStatus(r.status);setNewsUpdated(r.updatedAt||null)}}).catch(()=>{if(active)setNewsStatus('unavailable')});return()=>{active=false}},[]);
@@ -63,10 +69,14 @@ function App(){
  const currentArchive=useMemo(()=>allEvents.filter(e=>e.year<=year).sort((a,b)=>b.year-a.year),[year]);
  const featured=useMemo(()=>[events[0],events[31],events[9],events[34],events[21],events[18]].filter(Boolean).map(e=>({...e,name:e.title,kind:e.type==='Strike'||e.type==='Attack'?'attack':'battle'})),[]);
  function onReady(){setGlobeReady(true);try{globe.current?.renderer()?.setPixelRatio(Math.min(window.devicePixelRatio||1,1.4));const ctrl=globe.current?.controls?.();if(ctrl){ctrl.autoRotate=true;ctrl.autoRotateSpeed=.25;ctrl.enableDamping=true;ctrl.dampingFactor=.08;ctrl.enablePan=false}globe.current?.pointOfView({lat:27,lng:21,altitude:isMobile?2.9:2.4},900)}catch(e){console.warn('3D controls',e)}}
- const focus=useCallback((p,coords)=>{if(!p)return;const item=p.geometry?countryFromGeo(p):p;const pos=coords||item;setSelected({...item,lat:Number.isFinite(pos?.lat)?pos.lat:item.lat,lng:Number.isFinite(pos?.lng)?pos.lng:item.lng});setDossierTab('overview');setSheet(true);setSearchOpen(false);setSearch('');setMenuOpen(false);try{let c=globe.current?.controls?.();if(c)c.autoRotate=false;globe.current?.pointOfView({lat:pos?.lat??item.lat??20,lng:pos?.lng??item.lng??0,altitude:isMobile?2.35:1.8},1050)}catch(e){console.warn(e)}},[isMobile]);
+ const focus=useCallback((p,coords)=>{if(!p)return;const item=p.geometry?countryFromGeo(p):p;const pos=coords||item;const inHunt=g.huntRef.current?.status==='playing'&&item.kind==='country';if(inHunt)g.guess(item);g.track(item.kind,item);setSelected({...item,lat:Number.isFinite(pos?.lat)?pos.lat:item.lat,lng:Number.isFinite(pos?.lng)?pos.lng:item.lng});setDossierTab('overview');setSheet(!inHunt&&!g.huntRef.current);setSearchOpen(false);setSearch('');setMenuOpen(false);try{let c=globe.current?.controls?.();if(c)c.autoRotate=false;globe.current?.pointOfView({lat:pos?.lat??item.lat??20,lng:pos?.lng??item.lng??0,altitude:isMobile?2.35:1.8},1050)}catch(e){console.warn(e)}},[isMobile,g.guess,g.track]);
+ useEffect(()=>{const h=g.hunt;if(!h)return;try{const c=globe.current?.controls?.();if(c)c.autoRotate=false;if(h.status==='playing'&&h.tries===0)globe.current?.pointOfView({lat:20,lng:15,altitude:isMobile?3:2.5},900);if(h.status==='lost')globe.current?.pointOfView({lat:h.target.lat,lng:h.target.lng,altitude:isMobile?2.3:1.7},1200)}catch{}},[g.hunt?.status,g.hunt?.round]);
+ function startHunt(){setTrophies(false);setSheet(false);setTour(false);setSearchOpen(false);g.startHunt(countries.filter(c=>features.length?features.some(f=>f.properties?.iso3===c.iso):true))}
+ useEffect(()=>{if(year<1900)g.track('rewind')},[year]);
+ useEffect(()=>{if(mode==='intelligence')g.track('mode',analysisMode)},[analysisMode,mode]);
  useEffect(()=>{if(!tour)return;const id=setInterval(()=>setTourIndex(i=>(i+1)%featured.length),8500);return()=>clearInterval(id)},[tour,featured.length]);
  useEffect(()=>{if(tour&&featured[tourIndex])focus(featured[tourIndex])},[tourIndex,tour]);
- function onMode(id){setMode(id);setMenuOpen(false);if(id==='conflicts'){setLayers(x=>({...x,battles:true,attacks:true}));setRail('news');setSheet(true)}if(id==='military')setLayers(x=>({...x,bases:true}));if(id==='trade')setLayers(x=>({...x,chokes:true}));if(id==='relations')setLayers(x=>({...x,relations:true}));if(id==='intelligence')setSheet(true)}
+ function onMode(id){setMode(id);g.track('module',id);setMenuOpen(false);if(id==='conflicts'){setLayers(x=>({...x,battles:true,attacks:true}));setRail('news');setSheet(true)}if(id==='military')setLayers(x=>({...x,bases:true}));if(id==='trade')setLayers(x=>({...x,chokes:true}));if(id==='relations')setLayers(x=>({...x,relations:true}));if(id==='intelligence')setSheet(true)}
  function chooseCountry(iso){const c=countries.find(x=>x.iso===iso);if(c)focus(c)}
  const pointPaint=p=>groups[p.kind]||'#7acbcc';
  const gs=canvas.current?.clientWidth||(isMobile?w:Math.floor(w*.76));
@@ -80,30 +90,30 @@ function App(){
   <header className="gp-top">
    <div className="gp-identity" onClick={()=>onMode('world')} role="button" tabIndex={0}><span className="gp-logo">◈</span><div><b>GEO<span>PULSE</span></b><small>WORLD INTELLIGENCE</small></div></div>
    <nav className={'gp-nav '+(menuOpen?'open':'')}>{MODULES.map(({id,label,icon:Icon})=><button key={id} onClick={()=>onMode(id)} className={mode===id?'active':''}><Icon size={15}/>{label}</button>)}</nav>
-   <div className="gp-topright"><span className="gp-source-status"><span className="gp-status-dot"/> SOURCE-BACKED</span><button onClick={()=>{setSearchOpen(v=>!v);setTimeout(()=>searchRef.current?.focus(),0)}} aria-label="Search"><Search size={19}/></button><button className="gp-menu" onClick={()=>setMenuOpen(v=>!v)} aria-label="Open navigation">{menuOpen?<X size={20}/>:<Menu size={20}/>}</button></div>
+   <div className="gp-topright"><PlayerHUD g={g} onTrophies={()=>setTrophies(true)}/><span className="gp-source-status"><span className="gp-status-dot"/> SOURCE-BACKED</span><button onClick={()=>{setSearchOpen(v=>!v);setTimeout(()=>searchRef.current?.focus(),0)}} aria-label="Search"><Search size={19}/></button><button className="gp-menu" onClick={()=>setMenuOpen(v=>!v)} aria-label="Open navigation">{menuOpen?<X size={20}/>:<Menu size={20}/>}</button></div>
   </header>
   <div className="gp-view">
-   <div className="gp-canvas" ref={canvas}>
-    <div className="gp-stars" aria-hidden="true"/>
+   <div className={'gp-canvas'+(g.hunt?' hunting':'')} ref={canvas}>
+    <div className="gp-stars" aria-hidden="true"/><div className="gx-radar" aria-hidden="true"/><div className="gx-scan" aria-hidden="true"/><div className="gx-brackets" aria-hidden="true"><i/><i/><i/><i/></div>
     <div className="gp-heading"><div className="gp-eyebrow"><span className="gp-pulse"/> GEOPOLITICAL INTELLIGENCE SYSTEM <span className="gp-heading-separator">/</span> EXPLORE THE WORLD</div><h1>{mode==='conflicts'?<>Global conflicts. <em>Source-backed.</em></>:<>Understand what moves <em>the world.</em></>}</h1><p>{mode==='conflicts'?'Regional watchpoints · incoming reports · strategic effects. Not live battle coordinates.':'Countries. Power. Conflicts. Connections. One interactive Earth.'}</p></div>
     <div className="gp-globe">
     <GlobeBoundary><Suspense fallback={<div className="gp-globe-loading"><span className="gp-orb">◉</span><strong>Preparing the real Earth...</strong><p>Natural Earth geography · 3D interactive globe</p></div>}>
      <ThreeGlobe ref={globe} width={viewWidth} height={viewHeight}
        globeImageUrl="/earth-real.svg"
-       backgroundColor="rgba(0,0,0,0)" showAtmosphere atmosphereColor="#45a2c8" atmosphereAltitude={.14}
+       backgroundColor="rgba(0,0,0,0)" showAtmosphere atmosphereColor="#2ef2ff" atmosphereAltitude={.2}
        animateIn={false} waitForGlobeReady={false} rendererConfig={{antialias:false,alpha:true,powerPreference:'low-power'}}
        onGlobeReady={onReady}
        polygonsData={features}
        polygonGeoJsonGeometry="geometry"
-       polygonCapColor={p=>p.properties?.iso3===isoOf(selected)?'rgba(69,222,216,.18)':'rgba(9,29,46,.015)'}
+       polygonCapColor={p=>{const iso=p.properties?.iso3;if(g.hunt&&g.hunt.status!=='playing'&&iso===g.hunt.target.iso)return g.hunt.status==='won'?'rgba(182,255,59,.42)':'rgba(255,61,187,.42)';if(g.hunt?.guesses?.some(x=>x.iso===iso))return 'rgba(255,122,61,.28)';if(iso===isoOf(selected))return 'rgba(46,242,255,.30)';return g.visited.has(iso)?'rgba(80,255,190,.11)':'rgba(2,8,18,.30)'}}
        polygonSideColor={()=> 'rgba(71,154,185,.04)'}
-       polygonStrokeColor={p=>p.properties?.iso3===isoOf(selected)?'#91f0e6':'rgba(168,218,219,.34)'}
+       polygonStrokeColor={p=>p.properties?.iso3===isoOf(selected)?'#7ffcff':g.visited.has(p.properties?.iso3)?'rgba(130,255,205,.6)':'rgba(120,200,230,.26)'}
        polygonAltitude={p=>p.properties?.iso3===isoOf(selected)?.014:.001}
-       polygonLabel={p=>p.properties?.name||''}
+       polygonLabel={p=>g.hunt?.status==='playing'?'':p.properties?.name||''}
        polygonCapCurvatureResolution={5}
        polygonsTransitionDuration={350}
        onPolygonClick={(p,e,coords)=>focus(p,coords)}
-       onPolygonHover={p=>setHovered(p?.properties?.name||null)}
+       onPolygonHover={p=>setHovered(g.huntRef.current?.status==='playing'?(p?'? ? ?':null):p?.properties?.name||null)}
        pointsData={pointData}
        pointLat="lat" pointLng="lng" pointResolution={6}
        pointAltitude={p=>p.id===selected?.id ? 0.07 : 0.024}
@@ -111,9 +121,9 @@ function App(){
        pointColor={pointPaint}
        pointLabel={p=>titleOf(p)}
        onPointClick={focus}
-       ringsData={selected?.kind!=='country'?[selected]:[]}
+       ringsData={Number.isFinite(selected?.lat)&&!hunting?[selected]:[]}
        ringLat="lat" ringLng="lng" ringMaxRadius={2.2} ringRepeatPeriod={1500} ringPropagationSpeed={.8}
-       ringColor={()=>t=>'rgba(243,180,106,'+(1-t)+')'}
+       ringColor={p=>t=>(p?.kind==='country'?'rgba(46,242,255,':'rgba(255,61,187,')+(1-t)+')'}
        arcsData={relationArcs} arcStartLat={p=>p.from[0]} arcStartLng={p=>p.from[1]} arcEndLat={p=>p.to[0]} arcEndLng={p=>p.to[1]}
        arcColor={()=>['#48d5c9','#c1a2ff']} arcAltitude={.18} arcDashLength={.18} arcDashGap={1} arcDashAnimateTime={5500}
      />
@@ -123,14 +133,17 @@ function App(){
       <div className="gp-map-nav-head"><Layers size={14}/> INTELLIGENCE LAYERS <span>{pointData.length} markers</span></div>
       {mode==='conflicts'?<div className="gp-chip-scroll"><span className="gp-layer-chip on"><span style={{background:'#ff6464'}}/>MONITORED REGIONS · NOT LIVE STRIKES</span></div>:<div className="gp-chip-scroll">{LAYERS.map(l=><button key={l.id} className={'gp-layer-chip '+(layers[l.id]?'on':'')} onClick={()=>setLayers(prev=>({...prev,[l.id]:!prev[l.id]}))}><span style={{background:l.color}}/>{l.name}</button>)}</div>}
     </div>
-    <div className="gp-map-buttons"><button onClick={()=>{try{const c=globe.current?.controls?.();if(c)c.autoRotate=!c.autoRotate}catch{}}} title="Toggle globe rotation"><Compass size={17}/></button><button onClick={()=>globe.current?.pointOfView({lat:27,lng:21,altitude:2.6},850)} title="Reset globe position"><Globe2 size={17}/></button><button onClick={()=>{setSearchOpen(true);setTimeout(()=>searchRef.current?.focus(),0)}} title="Find a country"><Search size={17}/></button></div>
+    {!isMobile&&w>=1100&&!g.hunt&&<QuestPanel g={g} onHunt={startHunt} onAll={()=>setTrophies(true)}/>}
+    <HuntBanner g={g} onNext={startHunt}/>
+    <Floats g={g}/>
+    <div className="gp-map-buttons"><button className="gx-hunt-btn" onClick={startHunt} title="Play Geo Hunt"><Crosshair size={17}/></button><button onClick={()=>setTrophies(true)} title="Missions & achievements"><Trophy size={17}/></button><button onClick={()=>{try{const c=globe.current?.controls?.();if(c)c.autoRotate=!c.autoRotate}catch{}}} title="Toggle globe rotation"><Compass size={17}/></button><button onClick={()=>globe.current?.pointOfView({lat:27,lng:21,altitude:2.6},850)} title="Reset globe position"><Globe2 size={17}/></button><button onClick={()=>{setSearchOpen(true);setTimeout(()=>searchRef.current?.focus(),0)}} title="Find a country"><Search size={17}/></button></div>
     <div className="gp-map-hint">DRAG TO ROTATE <span>·</span> PINCH TO ZOOM <span>·</span> SELECT ANY COUNTRY</div>
     {geoStatus!=='ready'&&<div className="gp-map-warning">{geoStatus==='loading'?'Loading real borders…':'Country polygons unavailable; reference points remain accessible'}</div>}
     {hovered&&<div className="gp-hover-tag">{hovered}</div>}
     <div className="gp-timeline">
       <div className="gp-timeline-head"><div><span className="gp-beacon"/><b>{mode==='rewind'?'WORLD REWIND':rail==='news'?'GLOBAL REPORTING':'KEY DEVELOPMENTS'}</b><small>{mode==='rewind'?'Historic references':rail==='news'?'GDELT indexed · '+(newsStatus==='ok'?'updated':'unavailable'):'Historical archive · sourced cases'}</small></div><div className="gp-timeline-actions">{mode!=='rewind'&&<div className="gp-rail-tabs"><button className={rail==='news'?'active':''} onClick={()=>{setRail('news');setTour(false)}}>NEWS</button><button className={rail==='archive'?'active':''} onClick={()=>setRail('archive')}>ARCHIVE</button></div>}{(mode==='rewind'||rail==='archive')&&<button onClick={()=>setTour(v=>!v)}>{tour?<Pause size={13}/>:<Play size={13}/>} {tour?'PAUSE TOUR':'START TOUR'}</button>}</div></div>
       {mode==='rewind'&&<div className="gp-rewind-bar"><span>1863</span><input type="range" min="1863" max="2026" value={year} onChange={e=>setYear(+e.target.value)}/><b>{year}</b></div>}
-      <div className="gp-story-list">{mode!=='rewind'&&rail==='news'?(visibleHeadlines.length?visibleHeadlines.map((n,i)=><a key={n.url+i} className="gp-news-card" href={n.url} target="_blank" rel="noopener noreferrer"><small><span className="gp-report-dot"/> {n.domain||'GDELT INDEXED'} · {dateOf(n.date)}</small><strong>{n.title}</strong><span>READ ORIGINAL ARTICLE ↗</span></a>):<div className="gp-news-empty">News feed {newsStatus==='loading'?'is loading': 'is unavailable'}. No fabricated headlines.</div>):(mode==='rewind'?currentArchive.slice(0,10):featured).map((e,i)=><button key={e.id+'story'} className={selected?.id===e.id?'chosen':''} onClick={()=>focus(e)}><small><span style={{background:groups[e.kind]}}/> {e.period||e.year} · {e.type}</small><strong>{e.title}</strong><span>{e.location}</span></button>)}</div>
+      <div className="gp-story-list">{mode!=='rewind'&&rail==='news'?(visibleHeadlines.length?visibleHeadlines.map((n,i)=><a key={n.url+i} onClick={()=>g.track('news')} className="gp-news-card" href={n.url} target="_blank" rel="noopener noreferrer"><small><span className="gp-report-dot"/> {n.domain||'GDELT INDEXED'} · {dateOf(n.date)}</small><strong>{n.title}</strong><span>READ ORIGINAL ARTICLE ↗</span></a>):<div className="gp-news-empty">News feed {newsStatus==='loading'?'is loading': 'is unavailable'}. No fabricated headlines.</div>):(mode==='rewind'?currentArchive.slice(0,10):featured).map((e,i)=><button key={e.id+'story'} className={selected?.id===e.id?'chosen':''} onClick={()=>focus(e)}><small><span style={{background:groups[e.kind]}}/> {e.period||e.year} · {e.type}</small><strong>{e.title}</strong><span>{e.location}</span></button>)}</div>
     </div>
    </div>
    <aside className={'gp-side '+(sheet?'gp-sheet-open':'')}>
@@ -153,6 +166,7 @@ function App(){
     </div>
     {isSelectedCountry?<div className="gp-dossier-body">
       <div className="gp-dossier-tabs">{[['overview','Overview'],['economy','Economy'],['relations','Relations']].map(([key,label])=><button key={key} className={dossierTab===key?'active':''} onClick={()=>setDossierTab(key)}>{label}</button>)}</div>
+      {dossierTab==='overview'&&economy&&<PowerCard data={economy}/>}
       {(dossierTab==='overview'||dossierTab==='economy')&&<div className="gp-metrics">
        <Metric name="GDP · CURRENT USD" value={summaryData.gdp?.value!=null?'$'+fmt(summaryData.gdp.value):'—'} year={summaryData.gdp?.year?'World Bank · '+summaryData.gdp.year:'World Bank · unavailable'}/>
        <Metric name="POPULATION" value={fmt(summaryData.population?.value)} year={summaryData.population?.year?'World Bank · '+summaryData.population.year:'World Bank · unavailable'}/>
@@ -169,6 +183,9 @@ function App(){
    </aside>
    {searchOpen&&<div className="gp-search-backdrop" onClick={()=>setSearchOpen(false)}><div className="gp-search-modal" onClick={e=>e.stopPropagation()}><div className="gp-search-input"><Search size={21}/><input ref={searchRef} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search 177 countries, events and places" onKeyDown={e=>e.key==='Escape'&&setSearchOpen(false)}/><button onClick={()=>setSearchOpen(false)}><X size={19}/></button></div><div className="gp-search-items">{searchData.length?searchData.map((p,i)=><button key={i} onClick={()=>focus(p)}><span>{p.kind==='country'?<Globe2 size={16}/>:p.kind==='choke'?<Anchor size={16}/>:<MapPin size={16}/>}</span><strong>{titleOf(p)}</strong><small>{p.region||p.location||p.type||p.kind}</small><ChevronRight size={16}/></button>):<div className="gp-no-results">No matching places or references</div>}</div><div className="gp-search-note">Type to explore real Natural Earth countries and curated historical events</div></div></div>}
   </div>
+  <Toasts g={g}/>
+  {trophies&&<AchievementsModal g={g} total={countries.length} onClose={()=>setTrophies(false)} onHunt={startHunt}/>}
+  {boot&&<BootScreen g={g} onStart={()=>{try{sessionStorage.setItem('gp.booted','1')}catch{};g.sfx('start');setBoot(false)}}/>}
   <div className="gp-mobile-navigation">{MODULES.filter(m=>['world','conflicts','relations','rewind','intelligence'].includes(m.id)).map(({id,label,icon:Icon})=><button key={id} className={mode===id?'active':''} onClick={()=>onMode(id)}><Icon size={19}/><span>{label}</span></button>)}</div>
  </div>
 }
